@@ -1,7 +1,13 @@
 /*向量基类*/
 
 
-import {isArray, isFunction, isNumber} from "@/utils/is.ts";
+import {isArray, isFunction, isNumber, isUndef} from "@/utils/is.ts";
+
+export function applyVector(target: VectorBasic, source: VectorBasic) {
+    Object.keys(source).forEach((key) => {
+        target[key as keyof VectorBasic] = source[key as keyof VectorBasic];
+    });
+}
 
 export class Vector implements VectorBasic {
     x: number = 0;
@@ -73,8 +79,8 @@ export class Vector implements VectorBasic {
 
     toMatrix() {
         return [
-            [this.x, 0],
-            [0, this.y]
+            [this.x],
+            [this.y],
         ];
     }
 
@@ -105,6 +111,7 @@ export class Vector implements VectorBasic {
     }
 }
 
+
 export class MovementVector extends Vector {
     acceleration: Vector = new Vector();
     velocity: Vector = new Vector();
@@ -124,12 +131,17 @@ export class Shape extends MovementVector {
 }
 
 export class ParticleMutableProperties extends Shape {
-    scale: number = 1;
+
+
+    scale: MovementVector = new MovementVector({
+        x: 1, y: 1
+    });
+
     opacity: number = 1;
 
     toStyle(): MutableStyledMap {
         return {
-            transform: `translate(${this.x},${this.y}) scale(${this.scale})`,
+            transform: `translate(${this.x},${this.y}) scaleX(${this.scale.x}) scaleY(${this.scale.y})`,
             opacity: `${this.opacity}`,
         };
     }
@@ -142,9 +154,12 @@ export class ParticleMutableProperties extends Shape {
     clone() {
         return new ParticleMutableProperties(this);
     }
+
+
 }
 
 type ParticleHookName = `life:${Particle['status']}`;
+
 
 export class Particle {
     /*管理者*/
@@ -155,29 +170,35 @@ export class Particle {
     cur: ParticleMutableProperties = new ParticleMutableProperties();
     /*去到哪个状态*/
     to: ParticleMutableProperties = new ParticleMutableProperties();
+
     /*粒子状态*/
+    get visible(): boolean {
+        const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
+        if (!boundary) return false;
+        return boundary.min.x < this.cur.x
+            && boundary.max.x > this.cur.x
+            && boundary.min.y < this.cur.y
+            && boundary.max.y > this.cur.x;
+    }
 
     id: string = "";
     status: "enter" | "update" | "remove" = "enter";
 
-    animating: (Promise<Particle> | null) = null;
+    animating: (Promise<this> | null) = null;
 
-    load(): Particle {
+    load(): this {
         return this;
     }
 
     /**/
-    async toward(): Promise<Particle> {
+    async toward(): Promise<this> {
         return this;
     }
 
-    render(): Particle | Promise<Particle> {
+    render(): this {
         return this;
     }
 
-    tick(time: void | number): boolean {
-        return false;
-    }
 
     toString() {
         const styledMap = this.cur.toStyle();
@@ -193,9 +214,9 @@ export class Particle {
         return this;
     }
 
-    duration<T extends number>(duration: T) {
-        if (!isNumber(duration)) return this.$duration;
-        this.$duration = duration;
+    duration<T extends number | undefined>(duration: T): number | this {
+        if (isUndef(duration)) return this.$duration as number;
+        this.$duration = duration as number;
         return this;
     }
 
@@ -238,14 +259,25 @@ export class Particle {
     onParticleRemove(fn: Function) {
         return this.on('life:remove', fn);
     }
+
+    remove() {
+        const managerChildren = this.manager?.children;
+        if (!managerChildren) return false;
+        const index = this.manager?.children.findIndex(_child => _child === this);
+        if (isUndef(index)) return false;
+        managerChildren.splice(index as number, 1);
+        return true;
+    }
 }
 
 export class ParticleAnimator extends Particle {
+    constructor(initial?: ParticleAnimator) {
+        super();
+        Object.assign(initial ?? {});
+    }
 
-    public tick(time: void | number): boolean | undefined {
-        this.cur.velocity.add(this.cur.acceleration);
-        this.cur.add(this.cur.velocity);
-        return false;
+    clone(): ThisType<any> {
+        return new ParticleAnimator(this);
     }
 }
 
@@ -254,9 +286,11 @@ export class ParticleManager {
     root: any;
     /*子节点信息*/
     children: Particle[] = [];
-    _children_set: Set<Particle['id']> = new Set();
+    _children_map: Map<Particle['id'], Particle> = new Map();
 
-    _id: string | ((any) => any) = 'id';
+    _id: string | ((data: any) => any) = 'id';
+
+    animating: Promise<this['children']> | null = null;
 
     /*加载*/
     load(): ParticleManager {
@@ -272,9 +306,14 @@ export class ParticleManager {
     };
 
     /*向着各自的 to 移动*/
-    toward(): Promise<Particle[]> {
-
-        return Promise.all(this.children.map(particle => particle.toward()));
+    toward(): Promise<this['children']> {
+        if (this.animating) return this.animating;
+        this.animating = Promise.all(this.children.map(particle => particle.toward()))
+            .then(res => {
+                this.animating = null;
+                return Promise.resolve(res);
+            });
+        return this.animating;
     };
 
     /*批量设置运动时间*/
@@ -301,23 +340,48 @@ export class ParticleManager {
 
     /*添加新的节点*/
     appendChild(particle: Particle | Particle[]) {
-        const sets = this._children_set;
+        const map = this._children_map;
         const particles = (isArray(particle) ? particle : [particle]) as Particle[];
         particles.forEach(
             particle => {
                 particle.setManager(this);
-                if (sets.has(particle[
-                    isFunction(this._id) ? this._id(particle) : this._id
-                    ])) {
+                /*@ts-ignore*/
+                if (map.has(particle[isFunction(this._id) ? (this._id as Function)(particle) as string : this._id as string])) {
                     particle.status = 'update';
                     particle.emit('life:update');
                 } else {
                     particle.status = 'enter';
                     particle.emit('life:enter');
+
                     this.children.push(particle);
+                    this._children_map.set(particle.id, particle);
                 }
             }
         );
+        return this;
+    }
+
+    removeChild(particles: Particle | Particle[]) {
+        if (isArray(particles)) {
+            (particles as Particle[]).forEach(particle => {
+                this.removeChild(particle);
+            });
+            return this;
+        }
+
+        return this.removeChildById((particles as Particle).id);
+    }
+
+    removeChildById(ids: string[] | string) {
+        if (ids instanceof Array) {
+            ids.forEach(id => this.removeChildById(id));
+            return this;
+        }
+        const id: string = ids;
+        const child = this._children_map.get(id);
+        if (!child) return this;
+        this._children_map.delete(ids as string);
+        child.remove();
         return this;
     }
 
@@ -326,6 +390,14 @@ export class ParticleManager {
         min: new Vector(),
         max: new Vector(),
     };
+
+    getRandomDotAtBoundary() {
+        const {min, max} = this.boundary;
+        return {
+            x: Math.round(max.x - Math.random() * (max.x - min.x)),
+            y: Math.round(max.y - Math.random() * (max.y - min.y)),
+        };
+    }
 
     /*按照条件过滤部分节点*/
     filter(): ParticleManager {
@@ -345,6 +417,10 @@ export class ParticleManager {
 
     clone() {
         return new ParticleManager(this);
+    }
+
+    get isAnimating() {
+        return !!this.animating;
     }
 }
 

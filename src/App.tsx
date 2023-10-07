@@ -4,57 +4,86 @@ import {getRandom} from "@/utils/random.ts";
 import * as d3 from 'd3';
 import {getTextBitmapData} from "@/utils/image.ts";
 
+
 export default defineComponent({
     setup() {
         const manager = new MusicParticleManager();
+
+
         const container = ref<HTMLElement>();
         const data = new Array(30).fill(1).map((_, index) => `${index}`);
 
         const radScale = d3.scaleLinear().domain([0, data.length - 1]).range([0, 2 * Math.PI]);
+
+        const dataScale = d3.scaleLinear([0, data.length - 1], [0, 900]);
+        const rawScale = dataScale.copy();
+
+        const dt = {height: 900, width: 900};
+        const wt = {
+            color: "#303438",
+            speed: 2.0,
+            scale_speed: .08,
+            scale: .05,
+            group: 2,
+            footer_open: false,
+            spacing: 75,
+            y: {up: dt.height / 2, down: dt.height / 2, direction: "up", year: 0, distance: 0},
+            x: {year: 0, amount: 0}
+        };
+
         const particles = data.map((data, index) => {
             const particle = new MusicParticle();
-            const rad = radScale(index);
+            particle.cur.opacity = 0;
 
-            particle.cur.apply({
-                x: 1200 * Math.cos(rad),
-                y: 1200 * Math.sin(rad)
+            particle.cur.scale.applyScale(0);
+            particle.cur.scale.velocity.apply({
+                x: wt.scale_speed,
+                y: wt.scale_speed,
             });
 
-            particle.to.apply({
-                x: 600 + 20 * Math.cos(rad),
-                y: 200 + 20 * Math.sin(rad),
+            particle.cur.velocity.apply({
+                x: wt.speed,
+                y: wt.speed
             });
+
             particle.id = data;
             return particle;
         });
-        onMounted(() => {
-            const now = getTextBitmapData('hello');
 
+
+        onMounted(() => {
+
+            const size = container.value?.getBoundingClientRect() as DOMRect;
+            const {max} = manager.boundary;
+            max.x = 800;
+            max.y = 800;
+            console.log(size);
             manager
-                .setContainer(container.value)
-                .appendChild(particles)
-                .duration(618)
-                .delay((_, index) => Math.random() * 100)
+                .setContainer(container.value as HTMLElement)
+                .appendChild(particles);
+            manager.children.forEach((particle, index) => {
+                const random_dot = manager.getRandomDotAtBoundary();
+                const aim_dot = {x: index * 10, y: 200};
+                particle.cur.apply(random_dot);
+                particle.to.apply(aim_dot);
+                particle.to.scale.applyScale(wt.scale);
+            });
+            manager
+                .attachElement()
+                .duration(309)
+                .delay(() => Math.round(Math.random() * data.length))
+
                 .load()
+
                 .toward()
-                .then((res) => {
+                .then(() => {
                 });
-            for (let row = 0; row < now.height; row++) {
-                for (let col = 0; col < now.width; col++) {
-                    const cur = (row + col * now.width) * 4;
-                    console.log(now.data.slice(cur,cur+4))
-                    if ((cur) % 4) continue;
-                    const [r, g, b, a] = now.data.slice(cur, cur + 4);
-                    const time = new MusicParticle();
-                    time.cur.x = col;
-                    time.cur.y = row;
-                    console.log(r, g, b, a);
-                    time.id = `_cur-${cur}`;
-                    manager.appendChild(time);
-                }
-            }
+
 
         });
-        return () => <div ref={container}></div>;
+
+        return () => <div ref={container}>
+
+        </div>;
     }
 });

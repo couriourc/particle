@@ -6,3 +6,4 @@ export function delay(fn: Function, timeout: number) {
         return requestAnimationFrame(calc);
     };
 }
+
