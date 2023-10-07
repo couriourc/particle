@@ -20,7 +20,8 @@ export class MusicParticle<T> extends ParticleAnimator {
     manager: MusicParticleManager | null = null;
     shape: Sprite = new Sprite();
     events: InteractionManager;
-    el: HTMLElement;
+    el: Element;
+    selected: d3.Selection<Element, any, any, any>;
     _data: any;
 
     sensitivity: number = 20;
@@ -160,6 +161,9 @@ export class MusicParticle<T> extends ParticleAnimator {
         this.shape.alpha = 0.8;
         applyVector(this.shape, this.cur);
         applyVector(this.shape.scale, this.cur.scale);
+        this.selected
+            .datum(this)
+            .attr('style', d => `position:absolute;top:${d.cur.y}px;left:${d.cur.x}px`);
         return this;
     }
 
@@ -202,16 +206,83 @@ export class MusicParticleManager extends ParticleManager {
     }
 
     attachElement() {
-        d3.select(this.container)
+        const card = d3.select(this.container)
             .classed(cx('relative'), true)
             .selectAll('.hover_events')
             .data(this.children)
             .enter()
             .filter(item => item.visible)
             .append('div')
-            .attr('class', cx('hover_events', 'absolute'))
+            .attr('class', cx('hover_events', 'absolute', css`
+              text-align: center;
+              background: #2c3e50;
+              width: 200px;
+              height: 200px;
+              transition: clip-path 1s, border-radius 1s;
+              clip-path: circle(4px at 50% 50%);
+              border-radius: 50%;
+              cursor: pointer;
+              transform: translate(-34%, -34%);
+
+              &::after {
+                content: '';
+                display: inline-block;
+                position: absolute;
+                transition: top 1s,left 1s,height 1s;
+
+                background: #333;
+              }
+
+              &:not(.extent):hover {
+                clip-path: circle(40px at 50% 50%);
+                border: solid 2px #333;
+                box-sizing: border-box;
+
+                &::after {
+                  width: 100%;
+                  height: 100%;
+                  top: 50%;
+                  left: 50%;
+                  border-radius: 50%;
+
+                  transform: translate(-50%, -50%);
+                }
+
+              }
+
+              z-index: 0;
+
+              &.extent {
+                z-index: 999;
+                clip-path: circle(1000px at 50% 50%);
+                border-radius: 6px;
+
+                &::after {
+                  width: 50%;
+                  height: 100%;
+                }
+            `))
             .attr('style', d => `position:absolute;top:${d.cur.y}px;left:${d.cur.x}px`)
+            .on('click', function () {
+                const card = d3.select(this);
+                card.classed('extent', !card.classed('extent'));
+            });
+
+        card.append('div')
+            .attr('class', cx('title',
+                css`
+                  border-radius: 50%;
+                  cursor: pointer;
+                  display: inline-block;
+                  color: white;
+                `))
             .text(d => d.visible)
+        ;
+
+        card.each(function (particle: MusicParticle<any>) {
+            particle.el = this as HTMLElement;
+            particle.selected = d3.select(this as Element);
+        })
             .exit()
             .remove();
 
