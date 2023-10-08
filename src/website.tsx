@@ -29,9 +29,6 @@ export default defineComponent({
             particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
             const particles = new THREE.Points(particlesGeometry, pointMaterial);
-//            for (let position of particles.geometry.attributes.position) {
-//                particles.geometry.attributes.position.setY(positionKey, positionKey * Math.sin(positionKey));
-//            }
 
             scene.add(particles);
 

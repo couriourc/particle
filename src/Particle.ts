@@ -171,6 +171,14 @@ export class Particle {
     /*去到哪个状态*/
     to: ParticleMutableProperties = new ParticleMutableProperties();
 
+    _data: any;
+
+    data(data?: any) {
+        if (isUndef(data)) return this._data;
+        this._data = data;
+        return this;
+    }
+
     /*粒子状态*/
     get visible(): boolean {
         const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
@@ -352,7 +360,6 @@ export class ParticleManager {
                 } else {
                     particle.status = 'enter';
                     particle.emit('life:enter');
-
                     this.children.push(particle);
                     this._children_map.set(particle.id, particle);
                 }
