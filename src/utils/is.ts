@@ -23,3 +23,9 @@ export function isFunction(target: any): target is Function {
 export function isArray(target: any): target is [] {
     return is(target) === is(new Array(0));
 }
+export function isString(target: any): target is string {
+    return is(target) === is('');
+}
+export function isBoolean(target: any): target is string {
+    return is(target) === is(true);
+}

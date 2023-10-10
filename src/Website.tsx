@@ -2,36 +2,59 @@ import {defineComponent, onMounted, ref} from "vue";
 import * as THREE from 'three';
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import * as dat from 'lil-gui';
-import {Tween, update} from "@tweenjs/tween.js";
+import {Easing, Tween, update} from "@tweenjs/tween.js";
 
 export default defineComponent({
     setup() {
         const canvas = ref<Element>();
-
+        const scene = new THREE.Scene();
 
         onMounted(() => {
-            const scene = new THREE.Scene();
             // material
             const pointMaterial = new THREE.PointsMaterial({
                 size: 0.01,
                 sizeAttenuation: true,
             });
 
-            const gList = [];
+            const gList: Float32Array[] = [];
 
-            // geometry
             const particlesGeometry = new THREE.BufferGeometry();
-            const count = 50000;
-            const positions = new Float32Array(count * 3); // 每个点由三个坐标值组成（x, y, z）
-            for (let i = 0; i < count * 3; i += 1) {
-                positions[i] = (Math.random() - 0.5) * 5;
-            }
-            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
+            function gen(count = 50000) {
+                const positions = new Float32Array(count * 3); // 每个点由三个坐标值组成（x, y, z）
+                for (let i = 0; i < count * 3; i += 1) {
+                    positions[i] = (Math.random() - 0.5) * 5 * Math.cos(i);
+                }
+                return positions;
+            }
+
+
+            gList.push(gen(), gen(), gen());
+
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(gList[0], 3));
             const particles = new THREE.Points(particlesGeometry, pointMaterial);
+
 
             scene.add(particles);
 
+            /*toggle*/
+            const toggle = (i: number) =>
+                new Tween(
+                    particlesGeometry.attributes.position.array
+                ).to(gList[i])
+                    .easing(Easing.Quadratic.InOut)
+                    .onUpdate(function () {
+                        pointMaterial.needsUpdate = true;
+                        particlesGeometry.attributes.position.needsUpdate = true;
+                    })
+                    .duration(1000)
+                    .onComplete(() => {
+                        setTimeout(() => {
+                            toggle((i + 1) % (gList.length));
+                        });
+                    }).start();
+
+            toggle(1);
 
             /**
              * Lights
@@ -51,41 +74,28 @@ export default defineComponent({
 
             const controls = new OrbitControls(camera, canvas.value);
             controls.enableDamping = true;
-// controls.autoRotateSpeed = 0.2
-            controls.zoomSpeed = 0.3;
+            // controls.autoRotateSpeed = 0.2
+            controls.zoomSpeed = 0.1;
+
             // Renderer
             const renderer = new THREE.WebGLRenderer({
                 canvas: canvas.value,
             });
             renderer.setSize(sizes.width, sizes.height);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-// Animations
-
-
-            console.log(particlesGeometry.attributes.position);
-            let time = 0;
-            const tick = (elapsedTime = 0) => {
+            // Animations
+            const tick = (time: number) => {
                 update();
-                time += elapsedTime * 1e-6;
-                controls.update();
-                pointMaterial.needsUpdate = true;
-                for (let i = 0; i < count; i += 1) {
-                    particlesGeometry.attributes.position.setY(i, (i%400) * 1e-2 * Math.sin(elapsedTime * 1e-3));
-                }
-                particlesGeometry.attributes.position.needsUpdate = true;
-                // Render
+
+                controls.update(time);
                 renderer.render(scene, camera);
-//                stats.end();
                 requestAnimationFrame(tick);
             };
-
-            tick();
+            tick(0);
 
             /**
              * Debug
              */
             const gui = new dat.GUI();
-
             gui.add(controls, 'autoRotate');
             gui.add(controls, 'autoRotateSpeed', 0.1, 10, 0.01);
             gui.add(pointMaterial, 'size', 0.01, 0.1, 0.001);

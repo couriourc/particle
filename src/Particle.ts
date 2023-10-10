@@ -116,6 +116,33 @@ export class MovementVector extends Vector {
     acceleration: Vector = new Vector();
     velocity: Vector = new Vector();
     friction: number = 1;
+
+    /**
+     * @param to {VectorBasic} 需要变动到的地方
+     * @param over {Function} 需要变动到的地方
+     * */
+    to(to: VectorBasic, next: Function, over: Function) {
+        ([
+            'x',
+            'y'
+        ] as ('x' | 'y')[]).forEach(
+            (attr: 'x' | 'y') => {
+                Math.abs(this[attr] - to[attr]) < Math.abs(this.velocity[attr])
+                    ? this[attr] = to[attr] :
+                    this[attr] > to[attr]
+                        ? this[attr] -= this.velocity[attr] :
+                        this[attr] += this.velocity[attr]
+                ;
+            }
+        );
+        /*获得插值信息*/
+        if (this.x === to.x && this.y === to.y) {
+            over();
+        } else {
+            next();
+        }
+        return this;
+    }
 }
 
 export type ShapeBoundaryRecord = Record<'min' | 'max', Vector>;
@@ -183,10 +210,9 @@ export class Particle {
     get visible(): boolean {
         const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
         if (!boundary) return false;
-        return boundary.min.x < this.cur.x
-            && boundary.max.x > this.cur.x
-            && boundary.min.y < this.cur.y
-            && boundary.max.y > this.cur.x;
+//        console.log()
+//        if ()
+        return true;
     }
 
     id: string = "";
@@ -215,18 +241,12 @@ export class Particle {
     }
 
     $delay: number = 0;
-    $duration: number = 1000;
 
     delay(delay: number) {
         this.$delay = delay;
         return this;
     }
 
-    duration<T extends number | undefined>(duration: T): number | this {
-        if (isUndef(duration)) return this.$duration as number;
-        this.$duration = duration as number;
-        return this;
-    }
 
     setManager(manager: ParticleManager) {
         this.manager = manager;
@@ -324,17 +344,6 @@ export class ParticleManager {
         return this.animating;
     };
 
-    /*批量设置运动时间*/
-    duration(fnOrVal: FnOrValue<number>): ParticleManager {
-        this.children.forEach((particle, index) => particle.duration(
-                isFunction(fnOrVal)
-                    ? (fnOrVal as Function)(particle, index)
-                    : fnOrVal as number
-            )
-        );
-        return this;
-    };
-
     /*批量设置延迟时间*/
     delay(fnOrVal: FnOrValue<number>): ParticleManager {
         this.children.forEach((particle, index) => particle.delay(
@@ -354,7 +363,7 @@ export class ParticleManager {
             particle => {
                 particle.setManager(this);
                 /*@ts-ignore*/
-                if (map.has(particle[isFunction(this._id) ? (this._id as Function)(particle) as string : this._id as string])) {
+                if (map.has(particle[isFunction(this._id) ? (this._id)(particle) as string : this._id as string])) {
                     particle.status = 'update';
                     particle.emit('life:update');
                 } else {
@@ -388,7 +397,8 @@ export class ParticleManager {
         const child = this._children_map.get(id);
         if (!child) return this;
         this._children_map.delete(ids as string);
-        child.remove();
+        child.status = 'remove';
+        child.emit('life:remove');
         return this;
     }
 
@@ -406,18 +416,6 @@ export class ParticleManager {
         };
     }
 
-    /*按照条件过滤部分节点*/
-    filter(): ParticleManager {
-        return this;
-    }
-
-    /*获取处于边界内的节点*/
-    getIncludedParticle(): Particle[] {
-        return this.children.filter(
-            particle => particle.cur.isInRange(this.boundary.min, this.boundary.max)
-        );
-    }
-
     constructor(initial?: Partial<ParticleManager>) {
         Object.assign(this, initial ?? {});
     }
@@ -426,9 +424,6 @@ export class ParticleManager {
         return new ParticleManager(this);
     }
 
-    get isAnimating() {
-        return !!this.animating;
-    }
 }
 
 
