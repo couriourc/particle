@@ -86,11 +86,11 @@ export class Vector implements VectorBasic {
 
 
     distance(other?: VectorBasic) {
-        return this.toArray(other).reduce(((pre, now) => pre ** 2 + now ** 2), 0) ** 0.5;
+        return this.toArray(other).reduce(((pre, now) => pre + now ** 2), 0) ** 0.5;
     }
 
     angle(other?: Vector): number {
-        return Math.acos(this.distance(other) / (this.distance() * other.distance()));
+        return Math.acos(this.distance(other) / (this.distance() * (other?.distance() ?? 1)));
     }
 
     direct(other?: VectorBasic) {
@@ -209,10 +209,16 @@ export class Particle {
     /*粒子状态*/
     get visible(): boolean {
         const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
-        if (!boundary) return false;
+
+//        if (!boundary) return false;
 //        console.log()
 //        if ()
-        return true;
+
+        return this.cur.x > boundary.min.x &&
+            this.cur.x < boundary.max.x &&
+            this.cur.y > boundary.min.y &&
+            this.cur.y < boundary.max.y
+            ;
     }
 
     id: string = "";
@@ -327,16 +333,17 @@ export class ParticleManager {
     }
 
     /*渲染子节点*/
-    render(): Promise<Particle[]> {
-        return Promise.all(
-            this.children.map(particle => particle.render())
-        );
+    render() {
+        this.children
+            .forEach(particle => particle.render());
     };
 
     /*向着各自的 to 移动*/
     toward(): Promise<this['children']> {
         if (this.animating) return this.animating;
-        this.animating = Promise.all(this.children.map(particle => particle.toward()))
+        this.animating = Promise.all(
+            this.children
+                .map(particle => particle.toward()))
             .then(res => {
                 this.animating = null;
                 return Promise.resolve(res);

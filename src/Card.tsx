@@ -1,10 +1,33 @@
-import {defineComponent, ref, Transition, TransitionGroup} from "vue";
+import {defineComponent, onMounted, reactive, ref, Transition, TransitionGroup} from "vue";
 import {css, cx} from "@emotion/css";
 import 'animate.css';
+
 
 export default defineComponent({
     setup() {
         const isShow = ref(false);
+        const nums = ref(10);
+        const aim = ref(1000);
+        const animate = () => {
+            TWEEN.update();
+            requestAnimationFrame(animate);
+        };
+        animate();
+
+
+//        new Tween({
+//            value: 1
+//        })
+//            .to({
+//                value: 100
+//            })
+//            .onUpdate((i)=>{
+//                nums.value = Math.round(i.value)
+//                console.log(i)
+//            })
+//            .delay(10)
+//            .easing(Easing.Quintic.InOut)
+//            .duration(1000).start();
         return () => <section class={cx('w-full h-100vh', `flex`, 'justify-center items-center')}>
             <section
                 class={cx(`w-120px h-200px border-solid border-1px drop-shadow `, css`
@@ -86,10 +109,10 @@ export default defineComponent({
                                      animation-timing-function: cubic-bezier(0.54, -0.02, 0.63, 0.89);
                                    }
 
-                                   &.leave{
+                                   &.leave {
                                      position: absolute;
                                    }
-                                   
+
                                    &.leave .animated {
                                      animation-name: slideOutDown;
                                      animation-delay: calc(var(--animation-delay, 0ms) * -1);
@@ -116,7 +139,7 @@ export default defineComponent({
                 <div class={cx('card-preference', 'text-center')}
                      onClick={() => isShow.value = !isShow.value}>
                     {/*外在表现部分*/}
-                    <span class={cx('title', 'p-2')}>新闻标题</span>
+                    <span class={cx('title', 'p-2')}>新闻标题{nums.value}</span>
                 </div>
             </section>
         </section>;

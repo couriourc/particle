@@ -1,52 +1,93 @@
-/*备忘录模式*/
-export class Memento<T> {
-    state: T;
+/*备忘录*/
+class Memento<T> {
+    _state: T;
+    _book: MementoBook<T>;
 
-    initState(state: T) {
-        this.state = state;
+    constructor(state: T) {
+        this._state = state;
+        this._book = new MementoBook<T>(this);
+        this.setState(state);
     }
 
-    constructor(state?: T) {
-        Object.assign(this.state, state ?? {});
+    getState() {
+        return this._state;
+    }
+
+    setState(state: T) {
+
     }
 
     snapshot() {
-        /*执行快照*/
-        return new Memento(JSON.parse(JSON.stringify(this.state)));
+        return this.getState();
     }
 
+    store() {
+        return this._book.store(this._state);
+    }
+
+    /*销毁这个快照*/
+    destroy() {
+
+    }
 }
 
-export class MementoManager<T> {
-    history: Memento<T>[] = [];
+class MementoBook<T> {
+    #history: Memento<T>['_state'][] = [];
+    #now: number = -1;
+    #memento: Memento<T>;
 
-    store(target: Memento<T>) {
-        /*保存快照*/
-        this.history.push(target.snapshot());
+    get curState() {
+        return this.#history[this.#now];
     }
 
-    /*获取索引号*/
-    restore(index: number) {
-        /*恢复快照*/
-        return this.history[index];
+    /*进行书籍绑定*/
+    constructor(memento: Memento<T>) {
+        /*绑定观察元素*/
+        this.#memento = memento;
+        /*创建初始快照*/
+        this.store(memento.snapshot());
     }
 
-    undo() {
-        return this.history.pop();
+    isEmpty() {
+        return !this.#history.length;
     }
 
-    first() {
-        const [first] = this.history;
-        return first;
+    isSurpass() {
+        return this.#now > this.#history.length;
     }
 
     last() {
-        return this.history.slice(-1)[0];
+        this.#now = this.#history.length - 1;
+        return this.curState;
     }
 
-    length() {
-        return this.history.length;
+    store(state: T) {
+        ++this.#now;
+        this.#history.push(state);
+    }
+
+    destroy() {
+        this.#history = [];
+    }
+
+    undo() {
+        if (this.isEmpty()) return this;
+        this.#now--;
+        return this;
+    }
+
+    revokeUndo() {
+        if (this.isEmpty()) return null;
+        if (this.isSurpass()) {
+            return this.last();
+        }
+        this.#now++;
+        return this;
+    }
+
+    /*恢复*/
+    apply() {
+        this.#memento.setState(this.curState);
     }
 }
-
 
