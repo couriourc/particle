@@ -4,11 +4,12 @@ function is(source: any) {
         .toLowerCase();
 }
 
-export function isUndef(target: any): target is undefined {
+export function isUndef(target: any): target is void {
     return is(target) === is(undefined);
 }
 
-export function isDef(target: any): target is {} {
+
+export function isDef<T>(target: any): target is T {
     return !isUndef(target);
 }
 
@@ -23,9 +24,11 @@ export function isFunction(target: any): target is Function {
 export function isArray(target: any): target is [] {
     return is(target) === is(new Array(0));
 }
+
 export function isString(target: any): target is string {
     return is(target) === is('');
 }
+
 export function isBoolean(target: any): target is string {
     return is(target) === is(true);
 }

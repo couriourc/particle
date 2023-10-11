@@ -28,7 +28,7 @@ export default defineComponent({
         const data: (MusicParticleData & {
             is_mvp: boolean
         })[]
-            = new Array(30).fill(0).map((_, row, rows) =>
+            = new Array(150).fill(0).map((_, row, rows) =>
             new Array(~~(60 * Math.random()))
                 .fill(0)
                 .map((_, col, cols) => {
@@ -43,7 +43,7 @@ export default defineComponent({
         ).flat(1);
 
 
-        const dataScale = d3.scaleLinear([0, 60], [0, 600]);
+        const dataScale = d3.scaleLinear([0, 30], [0, 600]);
         const parentScale = d3.scaleLinear([0, 290], [0, 600]);
 
         const wt: {
@@ -183,11 +183,11 @@ export default defineComponent({
             max.x = size.width;
             max.y = size.height;
 
-            manager.scale.now.range([wt.container.margin.left, size.width]);
-            manager.scale.raw.range([wt.container.padding.left, size.width]);
+            manager.scale.now.range([wt.container.margin.left, size.width - wt.container.margin.right]);
+            manager.scale.raw.range([wt.container.padding.left, size.width - wt.container.padding.right]);
 
-            manager.parent_scale.now.range([24, size.width]);
-            manager.parent_scale.raw.range([24, size.width]);
+            manager.parent_scale.now.range([wt.container.padding.left, size.width - wt.container.padding.right]);
+            manager.parent_scale.raw.range([wt.container.padding.left, size.width - wt.container.padding.right]);
 
 
             manager.setContainer(container.value as HTMLElement)
@@ -203,9 +203,6 @@ export default defineComponent({
                 .load();
 
             manager.onUpdateScale((_, d) => {
-                Object.assign(wt.particle.transform, {
-                    x: wt.particle.transform.x + d.dx
-                });
                 handleTestResume();
             });
             const zoom = d3
@@ -213,14 +210,11 @@ export default defineComponent({
                 .on('zoom', function (event) {
                     const transform = event.transform;
                     const scale = transform.rescaleX(manager.scale.raw);
+
                     const [min] = scale.domain();
                     const [r_min] = manager.scale.raw.domain();
-                    if (min + 8 < r_min) {
-                        isLess.value = true;
-                    } else {
-                        isLess.value = false;
-                    }
 
+                    isLess.value = min + 100 < r_min;
                     Object.assign(wt.container.transform, transform);
                     Object.assign(wt.particle.transform, transform);
                     /*同步状态*/
@@ -230,7 +224,9 @@ export default defineComponent({
                         .updateScale()
                         .toward();
 
-                }).scaleExtent([1, 1.5]);
+                })
+                .scaleExtent([1, 1.5])
+            ;
 
             d3.select(container.value as Element)
                 .call(zoom.transform, d3.zoomIdentity)
@@ -260,7 +256,7 @@ export default defineComponent({
                         x: wt.particle.speed.x + rand(index),
                         y: wt.particle.speed.y + rand(index),
                     });
-                    particle.to.x = state.margin.x * data.row + transform.x + managerState.padding.left;
+                    particle.to.x = dataScale(data.row) / 3;
                     particle.to.y =
                         (data.col - (data.col_all >> 1)) * (state.margin.y * transform.k)
                         /*整个中心*/

@@ -12,7 +12,7 @@ import * as d3 from 'd3';
 import * as TWEEN from '@tweenjs/tween.js';
 import {InteractionManager} from "@pixi/interaction";
 import {css, cx} from "@emotion/css";
-import {isFunction} from "@/utils/is.ts";
+import {isDef, isFunction, isUndef} from "@/utils/is.ts";
 import Bg from '@/assets/img_texture.png';
 import Move from '@/assets/move.png';
 import type {ZoomScale} from "d3";
@@ -133,12 +133,6 @@ export class MusicParticle<T> extends ParticleAnimator {
 
         this.shape.on('pointertap', () => {
         });
-//        this.shape.on('pointerover', () => {
-//            this.manager!.setEventsTarget(this);
-//            this.to.scale.x = 3;
-//            this.to.scale.y = 3;
-//            this.toward();
-//        });
         this.shape.on('pointerleave', () => {
             this.to.scale.y = 1;
             this.to.scale.x = 1;
@@ -221,6 +215,7 @@ export class MusicParticle<T> extends ParticleAnimator {
             y: this.cur.y,
         });
         applyVector(this.shape.scale, this.cur.scale.clone());
+        this.updateEl();
         return this;
     }
 
@@ -242,6 +237,61 @@ export class MusicParticle<T> extends ParticleAnimator {
         this.render();
     }
 
+    _el: d3.Selection<Element, any, any, any> | void = undefined;
+
+    active() {
+        !this._el && (this._el =
+            this.manager!?.selected!
+                .datum(this)
+                .append('div')
+                .classed(cx(css`
+                  width: 50px;
+                  height: 25px;
+                  position: absolute;
+                  background: rgba(84, 112, 255, .9);
+                  border: #54a0ff solid 1px;
+                  transform: translate(-50%, -50%);
+                  border-radius: 12px;
+
+                  animation-name: fadeIn;
+                  animation-duration: 500ms;
+                  text-align: center;
+                  z-index: 9999;
+                  //transition: scale 100ms;
+                  //scale: 2;
+                  color: white;
+                  cursor: pointer;
+                  transition: width 100ms, height 100ms;
+
+                  &.open {
+                    width: 250px;
+                    height: 125px;
+                  }
+                `), true))
+            .style('top', d => `${d.cur.y}px`)
+            .style('left', d => `${d.cur.x}px`)
+            .text(this.id)
+            .on('click', function () {
+                const selected = d3.select(this);
+                selected.classed('open', !selected.classed('open'));
+            })
+
+        ;
+    }
+
+    updateEl() {
+        if (!this._el) return;
+        if (this.manager?._events_target !== this) this.deactive();
+        this._el?.style('top', d => `${d.cur.y}px`)
+            .style('left', d => `${d.cur.x}px`);
+
+    }
+
+    deactive() {
+        if (this._el?.classed('open')) return;
+        this._el?.remove();
+        this._el = null;
+    }
 
 }
 
@@ -403,7 +453,7 @@ export class MusicParticleManager<T> extends ParticleManager {
             .style('height', cursor => (cursor.height * cursor.scale) + 'px')
         ;
 
-        this.selected!?.on('wheel', (event: WheelEvent) => {
+        this.selected!?.on('wheel.passive', (event: WheelEvent) => {
             const direction = event.deltaY < 0 ? 1 : -1;
             const ampify = cursor.scale + (direction * Math.abs(event.deltaY / 1000));
             cursor.scale =
@@ -610,14 +660,15 @@ export class MusicParticleManager<T> extends ParticleManager {
             .call(slider_container_drag);
 
 
-        const end_range_slider_drag = d3.drag().on('drag', (event) => {
-            const dx = event.dx;
-            const r_range = this.scale.now.range();
-            const start = r_range[0] + dx;
-            const end = r_range[1];
-            this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
-            this.updateScale();
-        });
+        const end_range_slider_drag =
+            d3.drag().on('drag', (event) => {
+                const dx = event.dx;
+                const r_range = this.scale.now.range();
+                const start = r_range[0];
+                const end = r_range[1] + dx;
+                this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
+                this.updateScale();
+            });
         const end_range_slider = slider_container!
             .datum(this.slider.end)
             .append('div')
@@ -670,14 +721,19 @@ export class MusicParticleManager<T> extends ParticleManager {
         ));
     }
 
-    _events_target = null;
+    _events_target: MusicParticle<any> | void = undefined;
+    _delay: number = 200;
+    _delay_timer: number | null = null;
 
     setEventsTarget(pointer: VectorBasic) {
         /*开始向外扩展查找*/
         /*查找依据为周围三到四列*/
         /*先简单计算一下!*/
         const containerState = this.getState();
-        let count = 0;
+        let closet: MusicParticle<any> | undefined = undefined;
+
+        let closet_distance = Infinity;
+        if (this._events_target?._el?.classed('open')) return;
 
         this.children
             .filter(child => child.visible)
@@ -690,13 +746,17 @@ export class MusicParticleManager<T> extends ParticleManager {
                     y: state.scale.y * containerState.transform.k,
                 });
                 if (distance > state.sensitivity) return;
+                if (distance < closet_distance) {
+                    closet = child;
+                    closet_distance = distance;
+                }
                 const real = scale(distance);
-                count++;
 
                 child.cur.scale.velocity.apply({
                     x: state.scale_speed.x + Math.random() * 0.2,
                     y: state.scale_speed.y + Math.random() * 0.2,
                 });
+
                 child.to.scale.apply({
                     x: (state.scale.x) * containerState.transform.k + real,
                     y: (state.scale.y) * containerState.transform.k + real,
@@ -704,6 +764,15 @@ export class MusicParticleManager<T> extends ParticleManager {
                 return true;
             });
 
+
+        if (isUndef(closet)) return;
+        if (this._delay_timer) clearTimeout(this._delay_timer);
+        if (isDef<MusicParticle<any>>(this._events_target) && this._events_target !== closet) this._events_target.deactive();
+        /*如果是另外一个对象*/
+        this._delay_timer = setTimeout(() => {
+            this._events_target = closet;
+            closet.active();
+        }, this._delay);
 
     }
 }
