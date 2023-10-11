@@ -2,14 +2,20 @@ import {defineComponent, onMounted, ref} from "vue";
 import * as THREE from 'three';
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import * as dat from 'lil-gui';
-import {Easing, Tween, update} from "@tweenjs/tween.js";
+import {Easing, Interpolation, Tween, update} from "@tweenjs/tween.js";
+import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass';
+import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass';
+import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer';
+import {Color} from "three";
 
 export default defineComponent({
     setup() {
         const canvas = ref<Element>();
         const scene = new THREE.Scene();
-
+        scene.background = new Color('#060615');
         onMounted(() => {
+
+
             // material
             const pointMaterial = new THREE.PointsMaterial({
                 size: 0.01,
@@ -20,20 +26,40 @@ export default defineComponent({
 
             const particlesGeometry = new THREE.BufferGeometry();
 
-            function gen(count = 50000) {
+            function gen(count = 5000) {
                 const positions = new Float32Array(count * 3); // 每个点由三个坐标值组成（x, y, z）
-                for (let i = 0; i < count * 3; i += 1) {
-                    positions[i] = (Math.random() - 0.5) * 5 * Math.cos(i);
+                for (let i = 0; i < count * 3; i += 3) {
+                    positions[i] = Math.sin(((Math.random() * 2) * Math.PI));
+                    positions[i + 1] = Math.cos(((Math.random() * 2) * Math.PI));
+                    positions[i + 2] = (Math.random() - 0.5) * (Math.random() * 2) * Math.PI;
                 }
                 return positions;
             }
 
+            function genA(count = 5000) {
+                const positions = new Float32Array(count * 3); // 每个点由三个坐标值组成（x, y, z）
+                for (let i = 0; i < count * 3; i += 3) {
+                    positions[i] = Math.cos(((Math.random() * 2) * Math.PI));
+                    positions[i + 1] = (Math.random() - 0.5) * Math.sin(((Math.random() * 2) * Math.PI));
+                    positions[i + 2] = (Math.random() - 0.5) * (Math.random() * 2) * Math.PI;
+                }
+                return positions;
+            }
 
-            gList.push(gen(), gen(), gen());
+            function genB(count = 5000) {
+                const positions = new Float32Array(count * 3); // 每个点由三个坐标值组成（x, y, z）
+                for (let i = 0; i < count * 3; i += 3) {
+                    positions[i] = Math.random() * 2;
+                    positions[i + 1] = (Math.random() - 0.5) * 2;
+                    positions[i + 2] = (Math.random() - 0.5);
+                }
+                return positions;
+            }
+
+            gList.push(gen(), genA(), genB());
 
             particlesGeometry.setAttribute('position', new THREE.BufferAttribute(gList[0], 3));
             const particles = new THREE.Points(particlesGeometry, pointMaterial);
-
 
             scene.add(particles);
 
@@ -41,17 +67,16 @@ export default defineComponent({
             const toggle = (i: number) =>
                 new Tween(
                     particlesGeometry.attributes.position.array
-                ).to(gList[i])
-                    .easing(Easing.Quadratic.InOut)
+                )
+                    .interpolation(Interpolation.Bezier)
+                    .to(gList[i])
                     .onUpdate(function () {
                         pointMaterial.needsUpdate = true;
                         particlesGeometry.attributes.position.needsUpdate = true;
                     })
                     .duration(1000)
                     .onComplete(() => {
-                        setTimeout(() => {
-                            toggle((i + 1) % (gList.length));
-                        });
+                        toggle((i + 1) % (gList.length));
                     }).start();
 
             toggle(1);
@@ -82,12 +107,26 @@ export default defineComponent({
                 canvas: canvas.value,
             });
             renderer.setSize(sizes.width, sizes.height);
+
+            /*FIlter*/
+            const renderScene = new RenderPass(scene, camera);
+
+            // 后期处理效果，省略N多参数
+            const bloomPass = new UnrealBloomPass();
+            bloomPass.renderToScreen = true;
+            bloomPass.threshold = 0;
+            bloomPass.strength = 0.7;
+            bloomPass.radius = 0.5;
+            bloomPass.light = 1;
+
+            const composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
             // Animations
             const tick = (time: number) => {
                 update();
-
                 controls.update(time);
-                renderer.render(scene, camera);
+                composer.render();
                 requestAnimationFrame(tick);
             };
             tick(0);
