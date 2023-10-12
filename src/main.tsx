@@ -5,11 +5,14 @@ import App from './App';
 import 'uno.css';
 import Loading from "@/Loading.tsx";
 //import Website from "@/Website.tsx";
+import data from './DataProvider';
 
 createApp(<Loading
         value={
-            new Promise(resolve => {
-                setTimeout(() => resolve([]), 0);
+            new Promise((resolve) => {
+                setTimeout(()=>{
+                    resolve(data);
+                },1000)
             })
         }
     >

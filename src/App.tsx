@@ -2,14 +2,16 @@ import {defineComponent, onMounted, reactive, ref, shallowRef, Transition} from 
 import {
     MusicParticle,
     type MusicParticleConfig,
-    type MusicParticleContainerConfig, MusicParticleFooterConfig,
-    MusicParticleManager, MusicParticleRulerConfig
+    type MusicParticleContainerConfig,
+    type MusicParticleFooterConfig,
+    MusicParticleManager
 } from "@/MusicParticleAnimator.ts";
 import * as d3 from 'd3';
 import {css, cx, keyframes} from "@emotion/css";
 
 import 'animate.css';
 import {Color} from "pixi.js";
+import Move from '@/assets/move.png';
 
 export default defineComponent({
     props: {
@@ -17,34 +19,47 @@ export default defineComponent({
             type: Array
         }
     },
-    setup() {
+    setup(props: {
+        value: []
+    }) {
+        console.log(props.value);
         const container = ref<HTMLElement>();
         type MusicParticleData = {
             row: number;
             row_all: number;
             col: number;
             col_all: number;
+            time: string;
         }
         const data: (MusicParticleData & {
             is_mvp: boolean
         })[]
-            = new Array(150).fill(0).map((_, row, rows) =>
-            new Array(~~(60 * Math.random()))
-                .fill(0)
+            = new Array(50).fill(10).map((one, row, rows) =>
+            new Array(~~(Math.random() * 20))
+                .fill(1)
                 .map((_, col, cols) => {
                     return {
                         row,
                         col,
                         row_all: rows.length,
                         col_all: cols.length,
-                        is_mvp: Math.random() < 0.08
+                        all_data: rows.length * cols.length,
+                        index: row * cols.length + col,
+                        is_mvp: Math.random() < 0.008,
+                        data: _
                     };
                 })
         ).flat(1);
 
 
-        const dataScale = d3.scaleLinear([0, 30], [0, 600]);
-        const parentScale = d3.scaleLinear([0, 290], [0, 600]);
+        /*始终用第几行作为标准，而不是时间*/
+        const dataScale = d3
+            .scaleLinear()
+            .domain([0, props.value?.length]);
+
+        const parentScale = d3
+            .scaleLinear()
+            .domain([0, props.value?.length]);
 
         const wt: {
             container: MusicParticleContainerConfig;
@@ -71,6 +86,10 @@ export default defineComponent({
                     x: 0,
                     y: 0,
                 },
+                center: {
+                    x: 0,
+                    y: 0
+                },
                 gap: {
                     /*中间间隔*/
                     height: 5,
@@ -81,17 +100,45 @@ export default defineComponent({
                     /**/
                     ruler_dot: {
                         css: css`
+                          border: white solid 1px;
                           background: radial-gradient(50% 50% at 50% 50%, #476CCB 0%, rgba(85, 111, 205, 0.90) 61.98%, rgba(95, 121, 214, 0.00) 100%);
+
+                          &.moving {
+                            background-image: url(${Move});
+                          }
                         `
                     },
                     /**/
                     ruler_line: {
                         css: css`
-                          border: solid 1px rgb(110, 190, 195);
-                          border-image: linear-gradient(180deg, rgba(180, 133, 255, 0.88) 0.83%, #2F5DFF 100%);
+                          border-left: solid 2px rgba(255, 255, 255, .2);
+                          z-index: 1;
                         `
                     }
                 },
+                scaler: {
+                    css: css`
+                      background: #2c3e50;
+                    `,
+                    top: {
+                        css: css`
+                          z-index: 0;
+                        `
+                    },
+                    bottom: {}
+                },
+                cursor: {
+                    x: 0,
+                    y: 0,
+                    scale: 1,
+                    width: 12,
+                    height: 12,
+                    transform: {
+                        x: 0,
+                        y: 0,
+                        k: 1,
+                    }
+                }
             },
             /*粒子相关配置*/
             particle: {
@@ -104,16 +151,72 @@ export default defineComponent({
                     return 'up';
                 },
                 up: {
-                    color: new Color("#85C5FF"),
+                    color: new Color("#00bcf2"),
                 },
                 down: {
                     /*下边的粒子颜色*/
                     color: new Color("#eaeef1"),
                 },
+                mvps: {
+                    /*最有价值的某一天 或者某个新闻*/
+                    color: new Color("#eaeef1"),
+                },
+                /*卡片样式*/
+                card: {
+                    css: css`
+                      display: flex;
+                      flex-direction: column;
+                      align-items: center;
+                      background: rgba(32, 37, 65, 0.80);
+                      border: 1px solid rgba(255, 255, 255, .4);
+                      justify-content: center;
+                      z-index: 3;
+                      border-radius: 2em;
+                      width: 8em;
+                      height: 3em;
+                      padding: 6px 24px;
+
+                      animation-name: fadeIn;
+                      animation-duration: 500ms;
+                      text-align: center;
+
+                      color: white;
+                      cursor: pointer;
+                      transition: width 100ms cubic-bezier(0.47, 0.8, 0.61, 0.13),
+                      height 200ms cubic-bezier(0.47, 0.8, 0.61, 0.13);
+
+                      /**/
+                      animation-fill-mode: both;
+                      /*配置动画效果*/
+                      animation-timing-function: cubic-bezier(0.47, 0.8, 0.61, 0.13);
+
+                      &.close {
+
+                        animation-name: fadeOut;
+                        animation-duration: inherit;
+
+                      }
+
+                      &.open {
+                        animation-name: fadeIn;
+                        animation-duration: inherit;
+
+                        .title {
+                          animation-name: inherit;
+                          animation-duration: inherit;
+                          animation-timing-function: inherit;
+                        }
+
+                        justify-content: flex-start;
+                        width: 250px;
+                        height: 125px;
+                      }
+                    `,
+                },
                 /*粒子间距*/
                 margin: {
-                    x: 10,
-                    y: 10,
+                    x: 14,
+                    y: 14,
                 },
                 /*粒子移动的基速度*/
                 speed: {
@@ -132,10 +235,9 @@ export default defineComponent({
                     y: 0
                 },
                 scale: {
-                    x: 1,
-                    y: 1,
+                    x: .5,
+                    y: .5,
                 },
-
                 sensitivity: 40,
             },
             /*当前的状态*/
@@ -151,7 +253,16 @@ export default defineComponent({
         const manager = new MusicParticleManager(dataScale, parentScale, wt.container);
 
         const all_data = data.length;
-        const rand = (x) => x - (all_data >> 1) === 0 ? Math.random() : Math.random() * (((x - (all_data >> 1)) ** (2)) / (Math.abs(x - (all_data >> 1))));
+        manager.data = props.value;
+        /*abs(x)*(((abs(sin(x)))^(2))/(10))*/
+        const rand_v = (x: number) => Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
+        /*abs(x)*(((abs(sin(x)))^(2))/(10))*/
+        /*from f(x) = |x * sin(x)|*/
+//        const rand_scale = (x: number) => Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
+        if (all_data < 5000) {
+            wt.particle.scale.x = wt.particle.scale.y = 2;
+        }
+
 
         const particles = data.map((data, index) => {
             /*保存粒子的初始状态*/
@@ -162,8 +273,8 @@ export default defineComponent({
             particle.from.scale.apply(particle.cur.scale);
 
             particle.cur.velocity.apply({
-                x: wt.particle.speed.x + rand(index),
-                y: wt.particle.speed.y + rand(index),
+                x: wt.particle.speed.x + rand_v(index),
+                y: wt.particle.speed.y + rand_v(index),
             });
             particle.id = `${data.row}-${data.col}`;
             particle.data(data);
@@ -171,6 +282,7 @@ export default defineComponent({
         });
 
         const isLess = ref(false);
+        const isMore = ref(false);
 
         onMounted(() => {
             const size = container.value?.getBoundingClientRect() as DOMRect;
@@ -178,7 +290,9 @@ export default defineComponent({
 
             /*设置初始状态*/
             wt.container.size = size;
-            manager.setState(wt.container);
+            all_data < 50 && (wt.container.center.x = (size.width >> 1) - 200);
+            wt.particle.direction === 'both' && (wt.container.center.y = size.height >> 1);
+
 
             max.x = size.width;
             max.y = size.height;
@@ -196,38 +310,46 @@ export default defineComponent({
             manager.children.forEach((particle) => {
                 const random_dot = manager.getRandomDotAtBoundary();
                 particle.cur.apply(random_dot);
-                particle.from.apply(random_dot);
                 particle.to.scale.apply(wt.particle.scale);
             });
             manager.attachElement()
                 .load();
-
-            manager.onUpdateScale((_, d) => {
+            manager.onUpdateScale(() => {
                 handleTestResume();
             });
+
+            manager.setState(wt.container)
+                .setChildrenState(wt.particle);
+
             const zoom = d3
                 .zoom()
                 .on('zoom', function (event) {
                     const transform = event.transform;
                     const scale = transform.rescaleX(manager.scale.raw);
+                    /*相对父元素*/
+                    const p_now_min = manager.parent_scale.raw(scale.domain()[0]);
+                    const p_min = manager.parent_scale.raw(manager.parent_scale.raw.domain()[0]);
+                    /*相对父元素*/
+                    const p_now_max = manager.parent_scale.raw(scale.domain()[1]);
+                    const p_max = manager.parent_scale.raw(manager.parent_scale.raw.domain()[1]);
 
-                    const [min] = scale.domain();
-                    const [r_min] = manager.scale.raw.domain();
-
-                    isLess.value = min + 100 < r_min;
+                    isLess.value = p_now_min < p_min || p_now_max > p_max + 100;
+//                    if (p_now_min < p_min || p_now_max > p_max) return;
                     Object.assign(wt.container.transform, transform);
                     Object.assign(wt.particle.transform, transform);
                     /*同步状态*/
                     manager.scale.now.domain(scale.domain());
-                    manager.setState(wt.container)
-                        .setChildrenState(wt.particle)
-                        .updateScale()
-                        .toward();
-
+                    manager
+                        .setState(wt.container)
+                        .setChildrenState(wt.particle).updateScale();
                 })
-                .scaleExtent([1, 1.5])
+                .scaleExtent([1, 1.2])
             ;
 
+
+            manager.setState(wt.container)
+                .setChildrenState(wt.particle)
+                .updateScale();
             d3.select(container.value as Element)
                 .call(zoom.transform, d3.zoomIdentity)
                 .call(zoom)
@@ -239,34 +361,20 @@ export default defineComponent({
         const test = ref(false);
 
         function handleTestAppear(): any {
-            manager.appear();
+            manager.children.forEach((particle, index) => {
+                particle.appear();
+            });
         }
 
         function handleTestResume() {
-            const managerState = manager.getState();
-            const transform = wt.particle.transform;
-            const size = wt.container.size;
-
             manager.children.forEach(
-                (particle, index) => {
-                    const state = particle.getState();
-                    const data = particle.data();
+                (particle) => {
                     /*在基速度的基础上*/
-                    particle.cur.velocity.apply({
-                        x: wt.particle.speed.x + rand(index),
-                        y: wt.particle.speed.y + rand(index),
-                    });
-                    particle.to.x = dataScale(data.row) / 3;
-                    particle.to.y =
-                        (data.col - (data.col_all >> 1)) * (state.margin.y * transform.k)
-                        /*整个中心*/
-                        + ((size!.height as number) / 2) - wt.container.gap.height
-                        + (data.col > (data.col_all >> 1) ? -(wt.container.gap.height >> 1) : (-wt.container.gap.height << 1));
-
-                    particle.to.scale.apply({
-                        x: transform.k,
-                        y: transform.k,
-                    });
+                    const ordered_scale = particle.order_random_scale();
+                    const ordered_pos = particle.order_pos();
+                    particle.cur.velocity.apply(ordered_pos.velocity);
+                    particle.to.apply(ordered_pos);
+                    particle.to.scale.apply(ordered_scale);
                     particle.from.scale.apply(particle.to.scale);
                 }
             );
@@ -285,17 +393,17 @@ export default defineComponent({
                 <div
                     class={cx('nothing', 'animate__animated', css`
                       position: absolute;
-                      top: 50%;
+                      top: 2em;
                       left: 10em;
-                      border: solid 1px;
+                      border: solid 1px rgba(255, 255, 255, .2);
                       padding: 12px;
                       animation-name: slideInLeft;
                       animation-duration: 400ms;
                       animation-timing-function: cubic-bezier(0.28, 0.76, 0.76, 0.23);
-                      color: #fff;
+                      color: #f2f2f2;
 
                       opacity: 1;
-                      translate: 0 -50%;
+                      //translate: 0 -50%;
 
                       &.remove {
                         opacity: 0;
@@ -325,80 +433,224 @@ export default defineComponent({
                         Noting Here 🤐
                     </div>
                     <div class={cx('line', css`
-                      border: solid;
+                      padding: 0 24px;
+
+
                     `)}>
                     </div>
                 </div>
+                <ul
+                    class={cx(
+                        "scroll-x-list",
+                        "w-full w-inherit",
+                        "tracking-normal",
+                        "flex flex-row gap-16px",
+                        css`
+                          width: 100%;
+                          right: 0;
+                          position: absolute;
+                          text-align: center;
 
-                <ul class={cx(
-                    css`
-                      width: 100%;
-                      right: 0;
-                      position: absolute;
-                      text-align: center;
-                      -webkit-transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12),
-                      bottom 0.7s linear;
-                      -moz-transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12),
-                      bottom 0.7s linear;
-                      transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12),
-                      bottom 0.7s linear;
-                      cursor: auto;
-                      clip: rect(-11px, auto, auto, auto);
-                      bottom: 14px;
-                      height: 56px;
-                      list-style: none;
-                      padding: 12px;
-                      background: #1c2734;
-                      z-index: 999;
+                          transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12),
+                          bottom 0.7s linear;
 
-                      &:hover, &.open {
-                        height: 200px;
-                        -webkit-transition-delay: 0s;
-                        -moz-transition-delay: 0s;
-                        transition-delay: 0s;
-                        z-index: 17;
-                      }
+                          cursor: pointer;
+                          clip: rect(-11px, auto, auto, auto);
+                          bottom: 18px;
+                          line-height: 29px;
+                          list-style: none;
+                          padding: 12px;
+                          background: #1c2734;
 
-                      ul {
-                        padding: 0;
-                        margin: 0;
-                        list-style: none;
-                      }
+                          .category {
+                            cursor: pointer;
+                            transition-duration: 200ms;
+                            height: 0 !important;
+                            transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12),
+                            bottom 0.7s linear;
+                          }
 
-                      .category {
-                        cursor: pointer;
-                      }
+                          &:hover, &.open {
+                            //height: 200px;
+                            -webkit-transition-delay: 0s;
+                            -moz-transition-delay: 0s;
+                            transition-delay: 0s;
+                            line-height: unset;
+                            z-index: 99999;
 
-                      &:hover .category {
-                        animation-duration: 2s;
-                        animation-fill-mode: both;
-                        animation-name: ${titleWindKeyframes};
-                      }
-                    `,
-                    'flex w-full h-full gap-10px',
-                    {
-                        open: footer.isOpen
-                    }
-                )}>
-                    <li class={cx('category', 'w-100px', 'border-solid', css`
-                      background: #FFF;
+                            .category {
+                              height: 150px !important;
+                            }
+
+                            .category-legend {
+                              //display: none;
+                              transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12);
+                              height: 0;
+                              width: 0;
+                              overflow: hidden;
+                            }
+                          }
+
+                          ul {
+                            padding: 0;
+                            margin: 0;
+                            list-style: none;
+                          }
+
+                          &.open .category {
+                            animation-duration: 2s;
+                            animation-fill-mode: both;
+                            animation-name: ${titleWindKeyframes};
+                          }
+
+                          & :has(.category:hover) {
+                            height: 50%;
+                          }
+                        `
+                    )}
+                >
+
+                    <li class={cx('category-legend', 'w-100px', 'border-solid', css`
+                      background: transparent;
+                      color: #f2f2f2;
+                      overflow: hidden;
+                      border: 1px solid rgba(255, 229, 218, 0.19);
+                      box-shadow: 0 0 4px 0 rgba(202, 202, 202, 0.25);
                     `)}
-                        onMouseenter={handleTestAppear}
-                        onMouseout={handleTestResume}
                     >
-                        时间
-                        <ul>
-                            <li>子分类</li>
-                        </ul>
+                        <div>事件</div>
                     </li>
-                    <li class={cx('category', 'w-100px', 'border-solid', css`
-                      background: #FFF;
-                    `)}>
-                        事件
-                        <ul>
-                            <li>子分类</li>
-                        </ul>
-                    </li>
+
+                    {[
+                        {}
+                    ].map((item) => (
+                        <li
+                            class={cx(
+                                "category",
+                                "inline-block ",
+                                css`
+                                  &:nth-child(1) {
+                                    margin-left: 0;
+                                  }
+
+                                  &:nth-last-child(1) {
+                                    margin-right: 0;
+                                  }
+
+                                  position: relative;
+                                  overflow: hidden;
+                                  cursor: pointer;
+                                `
+                            )}
+                        >
+                            <div
+                                class={cx(
+                                    "flex gap-12px",
+                                    "p-11px",
+                                    css`
+                                      width: 250px;
+                                      flex-shrink: 0;
+                                      border-radius: 8px;
+                                      border: 1px solid rgba(255, 229, 218, 0.19);
+                                      box-shadow: 0 0 8px 2px rgba(64, 24, 16, 0.25);
+                                      color: #fff;
+                                      font-size: 14px;
+                                      font-style: normal;
+                                      font-weight: 400;
+                                      transition: background-color 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12);
+                                      background: linear-gradient(0deg, transparent);
+
+                                      transition-duration: .7s;
+
+                                      &.active,
+                                      &:hover {
+                                        background: linear-gradient(20deg,
+                                        transparent 80%,
+                                        rgba(63, 146, 255, 0.47) 104.29%);
+                                      }
+                                    `,
+                                    {
+//                                        active: curCategory.value === item.category,
+                                    }
+                                )}
+                            >
+                                <div
+                                    class={cx(
+                                        "category-item__title",
+                                        "w-full h-full",
+                                        "rounded-8px",
+                                        "flex flex-col flex-justify-center flex-items-center gap-7px",
+                                        css`
+                                          width: 95px;
+                                          height: 120px;
+                                          flex-shrink: 0;
+                                          border-radius: 8px;
+                                          background: rgba(0, 0, 0, 0.2);
+                                          box-shadow: 0 0 4px 0 rgba(202, 202, 202, 0.25);
+                                          color: #f2f2f2;
+                                          font-size: 16px;
+                                          font-weight: 400;
+                                        `
+                                    )}
+                                >
+                                    <div
+                                        class={cx(
+                                            css`
+                                              width: 48px;
+                                              height: 48px;
+                                              flex-shrink: 0;
+                                              border: solid rgba(202, 202, 202, 0.25) 1px;
+                                            `,
+                                            "rounded-full",
+                                            "flex flex-justify-center flex-items-center"
+                                        )}
+                                    >
+                                    </div>
+                                    <span>事件</span>
+                                </div>
+                                <ul
+                                    class={cx(
+                                        `category-item-list`,
+                                        "w-full",
+                                        "flex flex-col gap-4px"
+                                    )}
+                                >
+                                    {[]?.slice(0, 3)?.map((category) => (
+                                        <li
+                                            class={cx("category-item-list__item", "cursor-pointer")}
+                                        >
+                                            <div
+                                                class={cx(
+                                                    "flex flex-justify-between flex-items-center",
+                                                    "duration-200ms",
+                                                    "bg-white bg-opacity-10 rounded py-4px px-11px",
+                                                    "hover:bg-red-400 hover:bg-opacity-50 hover:text-!white"
+                                                )}
+                                                onClick={() => {
+//                                                    data.value = category.data;
+                                                }}
+                                            >
+                                                {/*    <span class={cx('inline-block max-w-6em truncate')}*/}
+                                                {/*          title={category.title}>{category.title}</span>*/}
+                                                {/*<span class={cx("font-bold")}>{category.total}</span>*/}
+                                            </div>
+                                        </li>
+                                    ))}
+
+                                    <li
+                                        //                                        v-show={item.category.length > 3}
+                                        class={cx(
+                                            `cursor-pointer text-center text-white text-opacity-60 hover:text-opacity-100 duration-200ms`
+                                        )}
+                                        onClick={() => {
+
+                                        }}
+                                    >
+                                    </li>
+                                </ul>
+                            </div>
+                        </li>
+                    ))}
                 </ul>
             </div>
         </div>;

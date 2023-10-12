@@ -213,12 +213,12 @@ export class Particle {
 //        if (!boundary) return false;
 //        console.log()
 //        if ()
-
-        return this.cur.x > boundary.min.x &&
-            this.cur.x < boundary.max.x &&
-            this.cur.y > boundary.min.y &&
-            this.cur.y < boundary.max.y
-            ;
+        const inRange = (val: VectorBasic) => val.x > boundary.min.x &&
+            val.x < boundary.max.x &&
+            val.y > boundary.min.y &&
+            val.y < boundary.max.y
+        ;
+        return inRange(this.cur) || inRange(this.to);
     }
 
     id: string = "";

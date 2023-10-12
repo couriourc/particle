@@ -36,7 +36,7 @@ const loadingAnimation = css`
   }
 `;
 const Loading = defineComponent<{
-    value: Promise
+    value: Promise<any>
 }>({
     props: {
         value: {
@@ -44,9 +44,11 @@ const Loading = defineComponent<{
         }
     },
     setup(props: {
-        value: Promise
-    }, {slots}: {
-        default: VNode,
+        value: Promise<any>
+    }, cxt: {
+        slots: {
+            default: (props: { value: any }) => VNode
+        },
     }) {
         const isLoading = ref<boolean>();
         const loadedData = ref<any>([]);
@@ -65,16 +67,16 @@ const Loading = defineComponent<{
             {/*      &.loading {*/}
             {/*      }*/}
             {/*    `)}>*/}
-                {isLoading.value ?
-                    slots.default({
-                        value: loadedData.value,
-                    }) : <div class={cx('loading', loadingAnimation)}>
-                        <div class={'child'}>
-                            <div class="icon"></div>
-                            Wait A Moment...
-                        </div>
+            {isLoading.value ?
+                cxt.slots.default({
+                    value: loadedData.value,
+                }) : <div class={cx('loading', loadingAnimation)}>
+                    <div class={'child'}>
+                        <div class="icon"></div>
+                        Wait A Moment...
                     </div>
-                }
+                </div>
+            }
             {/*</Transition>*/}
         </>;
     }

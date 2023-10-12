@@ -1,12 +1,7 @@
-import {
-    applyVector,
-    MovementVector,
-    ParticleAnimator,
-    ParticleManager,
-    Vector
-} from "./Particle";
+import {applyVector, MovementVector, ParticleAnimator, ParticleManager, Vector} from "./Particle";
 import type {Color, ICanvas} from 'pixi.js';
-import {Application, Graphics, Container, TilingSprite, Texture} from "pixi.js";
+import {Application, Container, Graphics, Texture, TilingSprite} from "pixi.js";
+import type {ZoomScale} from "d3";
 import * as d3 from 'd3';
 /*@ts-ignore*/
 import * as TWEEN from '@tweenjs/tween.js';
@@ -14,20 +9,19 @@ import {InteractionManager} from "@pixi/interaction";
 import {css, cx} from "@emotion/css";
 import {isDef, isFunction, isUndef} from "@/utils/is.ts";
 import Bg from '@/assets/img_texture.png';
-import Move from '@/assets/move.png';
-import type {ZoomScale} from "d3";
-import {delay} from "@/utils/fn.ts";
 
 const ease = (
     source: MovementVector, target: MovementVector,
     key: 'x' | 'y',
     over?: Function
-) => Math.abs(source[key] - target[key]) < source.velocity[key]
-    ? (over?.(), source[key] = target[key])
-    : target[key] > source[key] ?
-        source[key] += source.velocity[key] :
-        (source[key] -= source.velocity[key]);
-
+) => {
+    if (source[key] !== target[key]) over?.();
+    Math.abs(source[key] - target[key]) < source.velocity[key]
+        ? (over?.(), source[key] = target[key])
+        : target[key] > source[key] ?
+            source[key] += source.velocity[key] :
+            (source[key] -= source.velocity[key]);
+};
 
 export  type MusicParticleRulerConfig = {
     ruler_line: {
@@ -36,7 +30,15 @@ export  type MusicParticleRulerConfig = {
     ruler_dot: {
         css: string,
     }
-
+}
+export type MusicParticleScalerConfig = {
+    css: string;
+    top: {
+        css?: string;
+    },
+    bottom: {
+        css?: string;
+    }
 }
 export type MusicParticleContainerConfig = {
     size: Partial<DOMRect>,
@@ -58,9 +60,20 @@ export type MusicParticleContainerConfig = {
     gap: {
         height: number;
     },
+    center: VectorBasic;
     background: Color;
     ruler: MusicParticleRulerConfig;
-
+    scaler: MusicParticleScalerConfig;
+    cursor: {
+        x: number,
+        y: number,
+        scale: number,
+        width: number,
+        height: number,
+        transform: VectorBasic & {
+            k: number
+        }
+    }
 };
 
 export type MusicParticleConfig<T> = {
@@ -75,6 +88,13 @@ export type MusicParticleConfig<T> = {
         /*下边的粒子颜色*/
         color: Color;
     };
+    mvps: {
+        /*颜色以及尺寸*/
+        color: Color;
+    },
+    card: {
+        css: string
+    },
     /*粒子移动的基速度*/
     /* 各方向的初始速度 */
     speed: VectorBasic | Vector;
@@ -116,27 +136,43 @@ export class MusicParticle<T> extends ParticleAnimator {
         return this.#state;
     }
 
-    setState(state?: MusicParticleConfig<T>) {
-        Object.assign(this.#state, state ?? {});
+    setState(state?: Partial<MusicParticleConfig<T>>) {
+        try {
+            Object.assign(this.#state, state);
+        } catch (err) {
+            console.log(`err-->`, err);
+        }
     }
 
     private async initShape() {
         const state = this.getState();
-
+        /*绘制初始形状*/
         this.shape.beginFill(state[state.checkDirection?.(this) as 'up' | 'down'].color);
         this.shape.drawCircle(0, 0, 2);
         this.shape.endFill();
+        this.shape.scale.set(state.scale.x, state.scale.y);
         this.shape.eventMode = 'dynamic';
-
         this.container.addChild(this.shape);
         this.manager?.root.stage.addChild(this.container);
 
-        this.shape.on('pointertap', () => {
-        });
-        this.shape.on('pointerleave', () => {
-            this.to.scale.y = 1;
-            this.to.scale.x = 1;
-        });
+//        if (this.data().is_mvp) {
+//            this.shape.scale.set(state.scale.x + 2, state.scale.y + 2);
+//        }
+//
+//        this.shape.on('pointertap', () => {
+//            this.active();
+//        });
+
+//        this.shape.on('pointerleave', () => {
+//        });
+//        this.shape.on('pointerout', () => {
+//            this.to.scale.apply({
+//                x: state.scale.x * state.transform.k,
+//                y: state.scale.y * state.transform.k,
+//            });
+//        });
+
+        /*start*/
 
     }
 
@@ -144,42 +180,55 @@ export class MusicParticle<T> extends ParticleAnimator {
     setManager(manager: MusicParticleManager<T>) {
         this.manager = manager;
         this.initShape();
-
+        this.setupEase();
         return this;
     }
 
     timer: number = 0;
 
+    triggerEaseOver() {
+        setTimeout(() => {
+            this.over_listeners.forEach((fn) => fn());
+        });
+    }
+
+    setupEase() {
+        this.ease();
+    }
+
+    over_listeners: Set<Function> = new Set<Function>();
+
+    onEaseOver(fn: Function) {
+        this.over_listeners.add(fn);
+    }
+
     public toward() {
         if (this.animating) {
+            /*复用上一批次的过程*/
             return this.animating;
         }
-        if (!this.visible || !this.need_render) {
-            this.cur.x = this.to.x;
-            this.cur.y = this.to.y;
-            this.cur.scale = this.to.scale;
-            this.cur.opacity = this.to.opacity;
-            this.render();
-            this.animating = null;
-            return Promise.resolve(this);
-        }
+        /*执行新的过程*/
         this.animating = new Promise(
             (resolve) => {
                 let unuseful = false;
-                this.ease(() => {
+
+                const over = () => {
                     if (unuseful) return;
                     unuseful = true;
-                    this.animating = null;
+                    /*抛出本次成果*/
                     resolve(this);
-                });
+                    /*移除掉本批次的任务*/
+                    this.animating = null;
+                    this.over_listeners.delete(over);
+                };
+                this.onEaseOver(over);
             }
-        ).then(() => {
-            return Promise.resolve(this);
-        });
+        );
         return this.animating;
     }
 
-    ease(all_over: Function = () => null) {
+
+    ease() {
         const to = this.to;
         const setted = {
             x: false,
@@ -187,33 +236,34 @@ export class MusicParticle<T> extends ParticleAnimator {
             scalex: false,
             scaley: false
         };
-        ease(this.cur, to, 'x', () => {
+
+
+        if (!this.visible) {
+            this.cur.x = this.to.x;
+            this.cur.y = this.to.y;
+            this.cur.scale = this.to.scale;
+            this.cur.opacity = this.to.opacity;
+            /*因为是不可见元素，所以在 render 的时候一见到为*/
             setted.x = true;
-        });
-        ease(this.cur, to, 'y', () => {
             setted.y = true;
-        });
-        ease(this.cur.scale, to.scale, 'x', () => {
             setted.scalex = true;
-
-        });
-        ease(this.cur.scale, to.scale, 'y', () => {
             setted.scaley = true;
-        });
-
-        if (setted.x && setted.y) {
-            all_over();
+        } else {
+            ease(this.cur, to, 'x', () => setted.x = true);
+            ease(this.cur, to, 'y', () => setted.y = true);
+            ease(this.cur.scale, to.scale, 'x', () => setted.scalex = true);
+            ease(this.cur.scale, to.scale, 'y', () => setted.scaley = true);
         }
-        requestAnimationFrame(this.ease.bind(this, all_over));
+        if (setted.x && setted.y && setted.scaley && setted.scalex) {
+            this.triggerEaseOver();
+        }
+        requestAnimationFrame(this.ease.bind(this));
     }
 
     render() {
         this.shape.visible = this.need_render;
-        this.shape.alpha = 0.8;
-        applyVector(this.shape, {
-            x: this.cur.x,
-            y: this.cur.y,
-        });
+        this.shape.alpha = 1;
+        applyVector(this.shape, this.cur.clone());
         applyVector(this.shape.scale, this.cur.scale.clone());
         this.updateEl();
         return this;
@@ -231,68 +281,113 @@ export class MusicParticle<T> extends ParticleAnimator {
         return this.toward();
     }
 
-    public disappear() {
-        /*出现在自身的位置*/
-        this.need_render = true;
-        this.render();
-    }
-
-    _el: d3.Selection<Element, any, any, any> | void = undefined;
+    _el: d3.Selection<any, any, any, any> | null | undefined = undefined;
 
     active() {
-        !this._el && (this._el =
-            this.manager!?.selected!
+        if (this._el) return;
+        const state = this.getState();
+        this._el =
+            this.manager!
+                ?.selected!
                 .datum(this)
                 .append('div')
                 .classed(cx(css`
-                  width: 50px;
-                  height: 25px;
                   position: absolute;
-                  background: rgba(84, 112, 255, .9);
-                  border: #54a0ff solid 1px;
                   transform: translate(-50%, -50%);
-                  border-radius: 12px;
-
-                  animation-name: fadeIn;
-                  animation-duration: 500ms;
-                  text-align: center;
-                  z-index: 9999;
-                  //transition: scale 100ms;
-                  //scale: 2;
-                  color: white;
-                  cursor: pointer;
-                  transition: width 100ms, height 100ms;
-
-                  &.open {
-                    width: 250px;
-                    height: 125px;
-                  }
-                `), true))
-            .style('top', d => `${d.cur.y}px`)
-            .style('left', d => `${d.cur.x}px`)
-            .text(this.id)
-            .on('click', function () {
-                const selected = d3.select(this);
-                selected.classed('open', !selected.classed('open'));
-            })
-
+                `), true)
+                .classed(state.card.css, true)
+                .style('top', d => `${d.cur.y}px`)
+                .style('left', d => `${d.cur.x}px`)
+                .on('click', function () {
+                    const selected = d3.select(this);
+                    if (!selected.classed('open')) {
+                        selected?.classed('open', true)
+                            .classed('close', false);
+                        return open();
+                    }
+                    selected?.classed('open', false)
+                        .classed('close', true);
+                    return close();
+                })
         ;
+
+        const text = this._el!.append('span').classed(cx(
+            'title',
+        ), true);
+        const truncate = (s: string, max_len: number, u: string = s.trim()) => u.length > max_len ? u.slice(0, max_len) + '...' : u;
+        const open = () => {
+            text.text((d) => {
+                const data = d.data().data;
+                return truncate(data?.news_title ?? '', 12);
+            });
+        };
+        const close = () => {
+            text.text((d) => {
+                const data = d.data().data;
+                return truncate(data?.news_title ?? '', 4);
+            });
+        };
+        /*初始的时候关闭他*/
+        close();
     }
 
     updateEl() {
         if (!this._el) return;
         if (this.manager?._events_target !== this) this.deactive();
+        /*更新尺子的标签*/
         this._el?.style('top', d => `${d.cur.y}px`)
             .style('left', d => `${d.cur.x}px`);
-
     }
 
     deactive() {
         if (this._el?.classed('open')) return;
         this._el?.remove();
-        this._el = null;
+        this._el = undefined;
     }
 
+
+    /*随机 数学函数 */
+    rand_v(x: number, all_data: number) {
+
+        return Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
+    };
+
+    /*安排*/
+    order_random_scale() {
+        const state = this.getState();
+        const data = this.data();
+
+        return {
+            x: state.scale.x * state.transform.k,
+            y: state.scale.y * state.transform.k,
+            velocity: {
+                x: state.scale_speed.x * state.transform.k + this.rand_v(data.index as number, data.all_data as number),
+                y: state.scale_speed.y * state.transform.k + this.rand_v(data.index as number, data.all_data as number),
+            }
+        };
+    }
+
+    order_pos() {
+        const managerState = this.manager!?.getState();
+        const state = this.getState();
+        const data = this.data();
+        const transform = managerState?.transform;
+        return {
+            x: managerState.center.x +
+                managerState.padding.left +
+                (data.row * state.margin.x) * transform.k + transform.x,
+            y: (data.col - (data.col_all >> 1)) *
+                (state.margin.y * transform.k)
+                /*整个中心*/
+                + (managerState.center.y) - managerState.gap.height
+                + (data.col > (data.col_all >> 1) ? -(managerState.gap.height >> 1) : (-managerState.gap.height << 1)),
+
+            velocity: {
+                x: state.speed.x * state.transform.k + this.rand_v(data.index, data.all_data) || Math.random() * 10,
+                y: state.speed.y * state.transform.k + this.rand_v(data.index, data.all_data) || Math.random() * 10,
+            }
+        };
+    }
 }
 
 
@@ -306,7 +401,9 @@ export class MusicParticleManager<T> extends ParticleManager {
     events = new InteractionManager(this.root.renderer);
     container: Element | null = null;
     selected: d3.Selection<Element, any, any, any> | null = null;
-    children: MusicParticle<any>[] = [];
+    children: MusicParticle<T>[] = [];
+    /*@ts0-ignore*/
+    data: T | null = null;
     /*批量处理受作用的粒子*/
 
     /*备忘录记录者*/
@@ -400,107 +497,129 @@ export class MusicParticleManager<T> extends ParticleManager {
     }
 
 
+    ruler: {
+        selection: d3.Selection<any, any, any, any> | void | null;
+        label: {
+            selection: d3.Selection<any, any, any, any> | null | void;
+        }
+        dot: {
+            selection: d3.Selection<any, any, any, any> | null | void;
+        }
+    } = {
+        label: {
+            selection: null
+        },
+        dot: {
+            selection: null
+        },
+        selection: null
+    };
+
     attachRuler() {
         const state = this.getState();
-        const cursor = {
-            x: 0,
-            y: 0,
-            scale: 1,
-            width: 12,
-            height: 12,
-        };
+        const cursor = state.cursor;
 
-
-        const ruler = this.selected
+        const ruler = this.ruler.selection = this.selected
             ?.datum(cursor)
             .append('div')
+            .classed('ruler', true)
             .classed(cx(css`
               position: absolute;
               height: 100%;
-              width: 2px;
-              transform: translate(0, 0%);
-              background: rgba(255, 255, 255, .2);
-              border: solid 1px rgb(255, 0, 0);
-              z-index: 100;
+              transform: translate(0, 0);
               pointer-events: none;
             `, state.ruler.ruler_line.css ?? ''), true)
             .style('display', 'none')
             .style('left', cursor => `${cursor.x}px`)
-            .style('top', () => `${0}px`)
-        ;
+            .style('top', () => `${0}px`);
 
-        const ruler_dot = ruler!.append('div')
+
+        this.ruler.dot.selection = ruler!.append('div')
+            .classed('ruler_dot', true)
             .classed(cx(
-                'ruler_dot',
                 css`
                   background-size: contain;
-                  background: #222222 no-repeat center;
                   left: 50%;
-                  transform: translate(-50%, -50%);
+                  transform: translate(-54%, -50%);
                   border-radius: 50%;
                   pointer-events: none;
-                  border: white solid 1px;
-
-                  &.moving {
-                    background-image: url(${Move});
-                  }
                 `, state.ruler.ruler_dot.css ?? ''
             ), true)
             .style('position', 'absolute')
-            .style('top', cursor => `${cursor.y}px`)
-            // .style('scale', cursor => cursor.scale)
+            .style('top', cursor => `${cursor.y + cursor.transform.y}px`)
             .style('width', cursor => (cursor.width * cursor.scale) + 'px')
-            .style('height', cursor => (cursor.height * cursor.scale) + 'px')
-        ;
+            .style('height', cursor => (cursor.height * cursor.scale) + 'px');
 
-        this.selected!?.on('wheel.passive', (event: WheelEvent) => {
-            const direction = event.deltaY < 0 ? 1 : -1;
-            const ampify = cursor.scale + (direction * Math.abs(event.deltaY / 1000));
-            cursor.scale =
-                direction === 1 ?
-                    Math.min(3, ampify)
-                    : Math.max(1, ampify)
-            ;
-            ruler_dot
-                .style('width', cursor => (cursor.width * cursor.scale) + 'px')
-                .style('height', cursor => (cursor.height * cursor.scale) + 'px');
-        });
-
-        const ruler_label = ruler!.append('span')
+        this.ruler.label.selection = ruler!.append('span')
+            .classed('ruler-label', true)
             .classed(cx(css`
               position: absolute;
               color: #2c3e50;
               padding: 0 12px;
               background: #f2f2f2;
               border-radius: 0 8px 8px 0;
-            `, 'drop-shadow'), true)
-        ;
+              white-space: nowrap;
+            `, 'drop-shadow'), true);
+        this.attachRulerEvent();
+        /*bind*/
+    }
 
-        /*update ruler*/
-        const update = () => {
-            ruler!
-                .style('display', 'initial')
-                .style('left', cursor => `${cursor.x}px`);
-            ruler_dot!
-                .style('top', cursor => `${cursor.y}px`)
-            ;
-
-            ruler_label!
-                .text(Math.round(this.scale.now.invert(cursor.x)))
-            ;
-        };
-        this.selected?.on('mousemove', function (event) {
-            const [x, y] = d3.pointer(event);
-            Object.assign(cursor, {
-                x,
-                y
-            });
-            update();
-        });
-
+    updateRulerLabel() {
 
     }
 
+    attachRulerEvent() {
+        const state = this.getState();
+        const cursor = state.cursor;
+
+        /*update ruler*/
+        const update = () => {
+            this.ruler.selection!
+                .style('display', 'initial')
+                .style('left', cursor => `${cursor.x + cursor.transform.x}px`);
+            this.ruler.dot.selection!
+                .style('top', cursor => `${cursor.y + cursor.transform.y}px`)
+            ;
+            this.ruler.label.selection!
+                .text(cursor => {
+                    const now = this.scale.now.invert(cursor.x + cursor.transform.x);
+                    if (
+                        now < this.scale.raw.domain()[0] ||
+                        now > this.scale.raw.domain()[1]
+                    ) return '';
+                    /*@ts-ignore*/
+                    return this.data!?.[Math.round(now) as number]?.time ?? '';
+                })
+            ;
+        };
+        this.selected!?.on('wheel', (event: WheelEvent) => {
+            const direction = event.deltaY < 0 ? 1 : -1;
+            const ampify = cursor.scale + (direction * Math.abs(event.deltaY / 1000));
+            cursor.transform.k =
+                direction === 1 ?
+                    Math.min(3, ampify)
+                    : Math.max(1, ampify)
+            ;
+            this.ruler.dot.selection!?.style('width', cursor => (cursor.width * cursor.scale * cursor.transform.k) + 'px')
+                .style('height', cursor => (cursor.height * cursor.scale * cursor.transform.k) + 'px');
+        }, {
+            passive: true
+        });
+
+        this.selected?.on('mousemove', function (event) {
+            const [x, y] = d3.pointer(event);
+            Object.assign(cursor.transform, {x, y,});
+            update();
+        });
+        this.onUpdateScale((_, {dx}) => {
+            /*变化的时候*/
+            this.ruler.selection!?.classed('scaling', true)
+                .classed('zooming', dx === 0)
+                .classed('left', dx > 0)
+                .classed('right', dx < 0);
+        });
+
+    }
 
     /*@ts-ignore*/
     parent_scale: {
@@ -575,6 +694,7 @@ export class MusicParticleManager<T> extends ParticleManager {
 
     attachScale() {
         this.initSlider();
+        const state = this.getState();
         const template = this.selected!
             .append('div')
             .classed(cx(
@@ -582,10 +702,10 @@ export class MusicParticleManager<T> extends ParticleManager {
                   position: absolute;
                   width: 100%;
                   height: 20px;
-                  background: #2c3e50;
-                  z-index: 999;
-                `
-            ), true);
+                `, 'drop-shadow'
+            ), true)
+            .classed(state.scaler.css ?? '', true)
+        ;
 
         const bottom_drag = d3.drag();
         this.scaleView.bottom = template.clone()
@@ -593,13 +713,16 @@ export class MusicParticleManager<T> extends ParticleManager {
               bottom: 0;
             `), true)
             /*@ts-ignore*/
-            .call(bottom_drag);
+            .call(bottom_drag)
+            .classed(state.scaler.bottom.css ?? '', true)
+        ;
 
         this.scaleView.top = template.clone()
             .classed(cx(css`
               top: 0;
-              z-index: 12;
-            `), true);
+            `), true)
+            .classed(state.scaler.top.css ?? '', true)
+        ;
 
 
         const slider_container = this.scaleView.bottom!
@@ -610,7 +733,6 @@ export class MusicParticleManager<T> extends ParticleManager {
               height: 100%;
               background: rgba(95, 121, 214, 0.3);
               cursor: pointer;
-              z-index: 999;
               border-radius: 2em;
 
               .slider_item {
@@ -621,6 +743,7 @@ export class MusicParticleManager<T> extends ParticleManager {
                 height: 24px;
                 border-radius: 50%;
                 background: radial-gradient(50% 50% at 50% 50%, #476CCB 0%, rgba(85, 111, 205, 0.90) 61.98%, rgba(95, 121, 214, 0.00) 100%);
+                z-index: 999;
 
                 &.end_slider {
                   right: 0;
@@ -633,8 +756,10 @@ export class MusicParticleManager<T> extends ParticleManager {
             const dx = event.dx;
             const r_range = this.scale.now.range();
             const start = r_range[0] + dx;
+            if (start < 0) return;
             const end = r_range[1];
             this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
+            console.log(this.scale.now.domain);
             this.updateScale();
         });
         const start_range_slider = slider_container!
@@ -645,20 +770,18 @@ export class MusicParticleManager<T> extends ParticleManager {
         ;
         /**/
 
-        const slider_container_drag = d3.drag().on('drag', (event) => {
-            const dx = event.dx;
-            const r_range = this.scale.now.range();
-            const start = r_range[0] + dx;
-            const end = r_range[1] + dx;
-            this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
-            this.updateScale();
-        });
-        const mid_range_slider = slider_container!
-            .datum(this.slider)
-            .append('div')
-            .classed('slider_item mid_slider', true)
-            .call(slider_container_drag);
-
+//        const slider_container_drag = d3.drag().on('drag', (event) => {
+//            const dx = event.dx;
+//            const r_range = this.scale.now.range();
+//            const start = r_range[0] + dx;
+//            const end = r_range[1] + dx;
+//            this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
+//            this.updateScale();
+//        });
+//        slider_container!
+//            .datum(this.slider)
+//            .append('div')
+//            .classed('slider_item mid_slider', true);
 
         const end_range_slider_drag =
             d3.drag().on('drag', (event) => {
@@ -666,6 +789,8 @@ export class MusicParticleManager<T> extends ParticleManager {
                 const r_range = this.scale.now.range();
                 const start = r_range[0];
                 const end = r_range[1] + dx;
+                const max_end = this.parent_scale.raw(this.parent_scale.now.domain()[1]);
+                if (end > max_end || start > end) return;
                 this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
                 this.updateScale();
             });
@@ -678,16 +803,17 @@ export class MusicParticleManager<T> extends ParticleManager {
 
         slider_container
             .datum(this.slider)
-            .style('width', (d) => Math.round(this.parent_scale.now(d.end.value) - this.parent_scale.now(d.start.value)) + 'px')
+            .style('width', (d: any) => Math.round(this.parent_scale.now(d.end.value) - this.parent_scale.now(d.start.value)) + 'px')
         ;
         this.slider.slider = slider_container;
         this.slider.start.slider = start_range_slider;
         this.slider.end.slider = end_range_slider;
 
         this.onUpdateScale(() => {
-            const start = this.parent_scale.now(this.slider.start.value);
-            const end = this.parent_scale.now(this.slider.end.value);
-
+            const start = this.parent_scale.raw(this.slider.start.value);
+            const end = this.parent_scale.raw(this.slider.end.value);
+//            console.log(`start-->`, start)
+//            console.log(`end-->`, start)
             (this.slider.slider as d3.Selection<Element, any, any, any>)?.style('left', () => start + 'px')
                 .style('width', () => Math.round(end - start) + 'px')
             ;
@@ -706,7 +832,8 @@ export class MusicParticleManager<T> extends ParticleManager {
     }
 
     updateScale() {
-        const dx = this.scale.now.domain()[0] - this.scale.raw.domain()[0];
+        /*换算像素变换，而非使用域变换*/
+        const dx = this.scale.raw(this.scale.now.domain()[0]) - this.scale.raw.range()[0];
         const d = {
             dx
         };
@@ -736,27 +863,30 @@ export class MusicParticleManager<T> extends ParticleManager {
         if (this._events_target?._el?.classed('open')) return;
 
         this.children
-            .filter(child => child.visible)
             .filter(child => {
+                if (!child.visible) return false;
                 const state = child.getState();
                 const distance = child.cur.distance(pointer);
                 const scale = d3.scaleLinear([1, 1.2],).domain([state.sensitivity, 0]);
                 child.to.scale.apply({
-                    x: state.scale.x * containerState.transform.k,
-                    y: state.scale.y * containerState.transform.k,
+                    x: state.scale.x * state.transform.k,
+                    y: state.scale.y * state.transform.k,
                 });
+                child.cur.scale.velocity.apply({
+                    x: state.scale_speed.x * state.transform.k,
+                    y: state.scale_speed.y * state.transform.k,
+                });
+
                 if (distance > state.sensitivity) return;
                 if (distance < closet_distance) {
                     closet = child;
                     closet_distance = distance;
                 }
                 const real = scale(distance);
-
                 child.cur.scale.velocity.apply({
-                    x: state.scale_speed.x + Math.random() * 0.2,
-                    y: state.scale_speed.y + Math.random() * 0.2,
+                    x: state.scale_speed.x * state.transform.k + 0.02 * Math.random(),
+                    y: state.scale_speed.y * state.transform.k + 0.02 * Math.random(),
                 });
-
                 child.to.scale.apply({
                     x: (state.scale.x) * containerState.transform.k + real,
                     y: (state.scale.y) * containerState.transform.k + real,
@@ -765,13 +895,19 @@ export class MusicParticleManager<T> extends ParticleManager {
             });
 
 
-        if (isUndef(closet)) return;
+        if (isUndef(closet)) {
+            /*如果没有最近元素，也就是远离了，但是没有最近数据*/
+            if (!this._events_target?._el?.classed('open')) {
+                return this._events_target?.deactive();
+            }
+            return;
+        }
         if (this._delay_timer) clearTimeout(this._delay_timer);
         if (isDef<MusicParticle<any>>(this._events_target) && this._events_target !== closet) this._events_target.deactive();
         /*如果是另外一个对象*/
         this._delay_timer = setTimeout(() => {
             this._events_target = closet;
-            closet.active();
+            closet?.active();
         }, this._delay);
 
     }
