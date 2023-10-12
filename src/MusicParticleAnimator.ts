@@ -10,7 +10,6 @@ import {css, cx} from "@emotion/css";
 import {isDef, isFunction, isUndef} from "@/utils/is.ts";
 import Bg from '@/assets/img_texture.png';
 import {Easing} from "@tweenjs/tween.js";
-import {titleWindKeyframes} from "@/animation/keyframes.ts";
 
 const ease = (
     source: MovementVector, target: MovementVector,
@@ -109,9 +108,11 @@ export type MusicParticleConfig<T> = {
     scale: {
         x: number,
         y: number,
+        extent: [number,number]
     };
     margin: VectorBasic;
     sensitivity: number;
+    opacity: number;
 }
 export type MusicParticleFooterConfig = {
     isOpen: boolean;
@@ -153,26 +154,9 @@ export class MusicParticle<T> extends ParticleAnimator {
         this.shape.drawCircle(0, 0, 2);
         this.shape.endFill();
         this.shape.scale.set(state.scale.x, state.scale.y);
-        this.shape.eventMode = 'dynamic';
+        this.container.eventMode = 'dynamic';
         this.container.addChild(this.shape);
         this.manager?.root.stage.addChild(this.container);
-
-//        if (this.data().is_mvp) {
-//            this.shape.scale.set(state.scale.x + 2, state.scale.y + 2);
-//        }
-//
-//        this.shape.on('pointertap', () => {
-//            this.active();
-//        });
-
-//        this.shape.on('pointerleave', () => {
-//        });
-//        this.shape.on('pointerout', () => {
-//            this.to.scale.apply({
-//                x: state.scale.x * state.transform.k,
-//                y: state.scale.y * state.transform.k,
-//            });
-//        });
 
         /*start*/
 
@@ -189,9 +173,7 @@ export class MusicParticle<T> extends ParticleAnimator {
     timer: number = 0;
 
     triggerEaseOver() {
-        setTimeout(() => {
-            this.over_listeners.forEach((fn) => fn());
-        });
+        this.over_listeners.forEach((fn) => fn());
     }
 
     setupEase() {
@@ -243,7 +225,7 @@ export class MusicParticle<T> extends ParticleAnimator {
         if (!this.visible) {
             this.cur.x = this.to.x;
             this.cur.y = this.to.y;
-            this.cur.scale = this.to.scale;
+            this.cur.scale.apply(this.to.scale);
             this.cur.opacity = this.to.opacity;
             /*因为是不可见元素，所以在 render 的时候一见到为*/
             setted.x = true;
@@ -255,6 +237,7 @@ export class MusicParticle<T> extends ParticleAnimator {
             ease(this.cur, to, 'y', () => setted.y = true);
             ease(this.cur.scale, to.scale, 'x', () => setted.scalex = true);
             ease(this.cur.scale, to.scale, 'y', () => setted.scaley = true);
+            // console.log(`state.scale_speed.x * state.transform.k + 0.002 * Math.random()-->`, this.cur.scale.velocity);
         }
         if (setted.x && setted.y && setted.scaley && setted.scalex) {
             this.triggerEaseOver();
@@ -263,10 +246,17 @@ export class MusicParticle<T> extends ParticleAnimator {
     }
 
     render() {
-        this.shape.visible = this.need_render;
-        this.shape.alpha = 1;
-        applyVector(this.shape, this.cur.clone());
-        applyVector(this.shape.scale, this.cur.scale.clone());
+        this.shape.visible = this.visible;
+        this.shape.alpha = this.cur.opacity;
+        applyVector(this.shape, {
+            x: this.cur.x,
+            y: this.cur.y,
+        });
+        applyVector(this.shape.scale, {
+            x: this.cur.scale.x,
+            y: this.cur.scale.y
+        });
+
         this.updateEl();
         return this;
     }
@@ -280,13 +270,14 @@ export class MusicParticle<T> extends ParticleAnimator {
             y: [min.y - 10, max.y + 10][(Math.random() > 0.5) ? 0 : 1]
         };
         this.to.apply(random_dot);
+        this.to.scale.applyScale(0);
         return this.toward();
     }
 
     _el: d3.Selection<any, any, any, any> | null | undefined = undefined;
 
     isActive() {
-        return this._el?.classed('open')
+        return this._el?.classed('open');
     }
 
     active() {
@@ -301,7 +292,6 @@ export class MusicParticle<T> extends ParticleAnimator {
                   position: absolute;
                   transform-origin: center;
                   transform: translate(-50%, -50%);
-//                  animation-name: ${titleWindKeyframes};
                 `), true)
                 .classed(state.card.css, true)
                 .style('top', d => `${d.cur.y}px`)
@@ -356,8 +346,7 @@ export class MusicParticle<T> extends ParticleAnimator {
 
     /*随机 数学函数 */
     rand_v(x: number, all_data: number) {
-
-        return Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
+        return Math.random() * Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
     };
 
     /*安排*/
@@ -391,10 +380,19 @@ export class MusicParticle<T> extends ParticleAnimator {
                 + (data.col > (data.col_all >> 1) ? -(managerState.gap.height >> 1) : (-managerState.gap.height << 1)),
 
             velocity: {
-                x: state.speed.x * state.transform.k + this.rand_v(data.index, data.all_data) || Math.random() * 10,
-                y: state.speed.y * state.transform.k + this.rand_v(data.index, data.all_data) || Math.random() * 10,
+                x: state.speed.x * state.transform.k + this.rand_v(data.index, data.all_data) || Math.random(),
+                y: state.speed.y * state.transform.k + this.rand_v(data.index, data.all_data) || Math.random(),
             }
         };
+    }
+
+    resume() {
+        const ordered_scale = this.order_random_scale();
+        const ordered_pos = this.order_pos();
+        this.cur.velocity.apply(ordered_pos.velocity);
+        this.to.apply(ordered_pos);
+        this.to.scale.apply(ordered_scale);
+        this.from.scale.apply(this.to.scale);
     }
 }
 
@@ -404,6 +402,7 @@ export class MusicParticleManager<T> extends ParticleManager {
     root: Application = new Application<ICanvas>(
         {
             backgroundColor: '#284852',
+            antialias: true
         }
     );
     events = new InteractionManager(this.root.renderer);
@@ -452,6 +451,7 @@ export class MusicParticleManager<T> extends ParticleManager {
     setChildrenState(state?: FnOrValue<MusicParticleConfig<T>>): this {
         if (isFunction(state)) {
             this.children.forEach((particle, index) => particle.setState(state(particle, index)));
+
             return this;
         }
         this.children.forEach((particle) => particle.setState(state));
@@ -762,7 +762,6 @@ export class MusicParticleManager<T> extends ParticleManager {
             if (start < 0) return;
             const end = r_range[1];
             this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
-            console.log(this.scale.now.domain);
             this.updateScale();
         });
         const start_range_slider = slider_container!
@@ -772,19 +771,6 @@ export class MusicParticleManager<T> extends ParticleManager {
             .call(start_range_slider_drag)
         ;
         /**/
-
-//        const slider_container_drag = d3.drag().on('drag', (event) => {
-//            const dx = event.dx;
-//            const r_range = this.scale.now.range();
-//            const start = r_range[0] + dx;
-//            const end = r_range[1] + dx;
-//            this.scale.now.domain([this.scale.now.invert(start), this.scale.now.invert(end)]);
-//            this.updateScale();
-//        });
-//        slider_container!
-//            .datum(this.slider)
-//            .append('div')
-//            .classed('slider_item mid_slider', true);
 
         const end_range_slider_drag =
             d3.drag().on('drag', (event) => {
@@ -815,8 +801,6 @@ export class MusicParticleManager<T> extends ParticleManager {
         this.onUpdateScale(() => {
             const start = this.parent_scale.raw(this.slider.start.value);
             const end = this.parent_scale.raw(this.slider.end.value);
-//            console.log(`start-->`, start)
-//            console.log(`end-->`, start)
             (this.slider.slider as d3.Selection<Element, any, any, any>)?.style('left', () => start + 'px')
                 .style('width', () => Math.round(end - start) + 'px')
             ;
@@ -852,7 +836,7 @@ export class MusicParticleManager<T> extends ParticleManager {
     }
 
     _events_target: MusicParticle<any> | void = undefined;
-    _delay: number = 200;
+    _delay: number = 250;
     _delay_timer: number | null = null;
 
     setEventsTarget(pointer: VectorBasic) {
@@ -870,16 +854,16 @@ export class MusicParticleManager<T> extends ParticleManager {
                 if (!child.visible) return false;
                 const state = child.getState();
                 const distance = child.cur.distance(pointer);
-                const scale = d3.scaleLinear([1, 1.2],).domain([state.sensitivity, 0]);
+                const scale = d3.scaleLinear(state.scale.extent).domain([state.sensitivity, 0]);
                 child.to.scale.apply({
                     x: state.scale.x * state.transform.k,
                     y: state.scale.y * state.transform.k,
                 });
                 child.cur.scale.velocity.apply({
-                    x: state.scale_speed.x * state.transform.k,
-                    y: state.scale_speed.y * state.transform.k,
+                    x: state.scale_speed.x * state.transform.k + state.scale_speed.x * Math.random(),
+                    y: state.scale_speed.y * state.transform.k + state.scale_speed.y * Math.random(),
                 });
-
+                child.cur.opacity = 0.6;
                 if (distance > state.sensitivity) return;
                 if (distance < closet_distance) {
                     closet = child;
@@ -887,13 +871,15 @@ export class MusicParticleManager<T> extends ParticleManager {
                 }
                 const real = scale(distance);
                 child.cur.scale.velocity.apply({
-                    x: state.scale_speed.x * state.transform.k + 0.02 * Math.random(),
-                    y: state.scale_speed.y * state.transform.k + 0.02 * Math.random(),
+                    x: state.scale_speed.x * state.transform.k + state.scale_speed.x * Math.random(),
+                    y: state.scale_speed.y * state.transform.k + state.scale_speed.y * Math.random(),
                 });
                 child.to.scale.apply({
                     x: (state.scale.x) * containerState.transform.k + real,
                     y: (state.scale.y) * containerState.transform.k + real,
                 });
+                child.cur.opacity = 1;
+
                 return true;
             });
 

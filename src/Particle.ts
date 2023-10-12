@@ -269,11 +269,11 @@ export class Particle {
     };
 
     emit(typename: ParticleHookName, ...args: any[]) {
-        setTimeout(() => {
+        // setTimeout(() => {
             this.$listeners[typename].forEach(
                 fn => fn(...args)
             );
-        });
+        // });
         return this;
     }
 
@@ -367,13 +367,17 @@ export class ParticleManager {
         const map = this._children_map;
         const particles = (isArray(particle) ? particle : [particle]) as Particle[];
         particles.forEach(
-            particle => {
-                particle.setManager(this);
+            (particle, index) => {
+                // console.log(map.has(particle[isFunction(this._id) ? (this._id)(particle) as string : this._id as string]));
                 /*@ts-ignore*/
-                if (map.has(particle[isFunction(this._id) ? (this._id)(particle) as string : this._id as string])) {
-                    particle.status = 'update';
-                    particle.emit('life:update');
+                const identity = particle[isFunction(this._id) ? (this._id)(particle) as string : this._id as string];
+                if (map.has(identity)) {
+                    const _particle = map.get(identity) as Particle;
+                    _particle.status = 'update';
+                    _particle.emit('life:update');
+                    delete particles[index];
                 } else {
+                    particle.setManager(this);
                     particle.status = 'enter';
                     particle.emit('life:enter');
                     this.children.push(particle);
