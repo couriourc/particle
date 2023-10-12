@@ -9,6 +9,8 @@ import {InteractionManager} from "@pixi/interaction";
 import {css, cx} from "@emotion/css";
 import {isDef, isFunction, isUndef} from "@/utils/is.ts";
 import Bg from '@/assets/img_texture.png';
+import {Easing} from "@tweenjs/tween.js";
+import {titleWindKeyframes} from "@/animation/keyframes.ts";
 
 const ease = (
     source: MovementVector, target: MovementVector,
@@ -283,6 +285,10 @@ export class MusicParticle<T> extends ParticleAnimator {
 
     _el: d3.Selection<any, any, any, any> | null | undefined = undefined;
 
+    isActive() {
+        return this._el?.classed('open')
+    }
+
     active() {
         if (this._el) return;
         const state = this.getState();
@@ -293,7 +299,9 @@ export class MusicParticle<T> extends ParticleAnimator {
                 .append('div')
                 .classed(cx(css`
                   position: absolute;
+                  transform-origin: center;
                   transform: translate(-50%, -50%);
+//                  animation-name: ${titleWindKeyframes};
                 `), true)
                 .classed(state.card.css, true)
                 .style('top', d => `${d.cur.y}px`)
@@ -318,13 +326,13 @@ export class MusicParticle<T> extends ParticleAnimator {
         const open = () => {
             text.text((d) => {
                 const data = d.data().data;
-                return truncate(data?.news_title ?? '', 12);
+                return truncate(data?.news_title ?? '', 12) || '无信息';
             });
         };
         const close = () => {
             text.text((d) => {
                 const data = d.data().data;
-                return truncate(data?.news_title ?? '', 4);
+                return truncate(data?.news_title ?? '', 4) || '无信息';
             });
         };
         /*初始的时候关闭他*/
@@ -571,15 +579,13 @@ export class MusicParticleManager<T> extends ParticleManager {
     attachRulerEvent() {
         const state = this.getState();
         const cursor = state.cursor;
-
         /*update ruler*/
         const update = () => {
             this.ruler.selection!
                 .style('display', 'initial')
                 .style('left', cursor => `${cursor.x + cursor.transform.x}px`);
             this.ruler.dot.selection!
-                .style('top', cursor => `${cursor.y + cursor.transform.y}px`)
-            ;
+                .style('top', cursor => `${cursor.y + cursor.transform.y}px`);
             this.ruler.label.selection!
                 .text(cursor => {
                     const now = this.scale.now.invert(cursor.x + cursor.transform.x);
@@ -592,26 +598,23 @@ export class MusicParticleManager<T> extends ParticleManager {
                 })
             ;
         };
-        this.selected!?.on('wheel', (event: WheelEvent) => {
-            const direction = event.deltaY < 0 ? 1 : -1;
-            const ampify = cursor.scale + (direction * Math.abs(event.deltaY / 1000));
-            cursor.transform.k =
-                direction === 1 ?
-                    Math.min(3, ampify)
-                    : Math.max(1, ampify)
-            ;
-            this.ruler.dot.selection!?.style('width', cursor => (cursor.width * cursor.scale * cursor.transform.k) + 'px')
-                .style('height', cursor => (cursor.height * cursor.scale * cursor.transform.k) + 'px');
-        }, {
-            passive: true
-        });
 
+        /*绑定高度变换，鼠标移动*/
         this.selected?.on('mousemove', function (event) {
             const [x, y] = d3.pointer(event);
-            Object.assign(cursor.transform, {x, y,});
+            Object.assign(cursor.transform, {x, y});
             update();
         });
+
         this.onUpdateScale((_, {dx}) => {
+            const state = this.getState();
+            cursor.transform.k = state.transform.k;
+            /*调整尺度*/
+            this.ruler.dot.selection!?.transition()
+                .duration(200)
+                .ease(Easing.Quintic.InOut)
+                .style('width', cursor => (cursor.width * cursor.scale * cursor.transform.k) + 'px')
+                .style('height', cursor => (cursor.height * cursor.scale * cursor.transform.k) + 'px');
             /*变化的时候*/
             this.ruler.selection!?.classed('scaling', true)
                 .classed('zooming', dx === 0)

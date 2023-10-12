@@ -12,6 +12,7 @@ import {css, cx, keyframes} from "@emotion/css";
 import 'animate.css';
 import {Color} from "pixi.js";
 import Move from '@/assets/move.png';
+import {titleWindKeyframes} from "@/animation/keyframes.ts";
 
 export default defineComponent({
     props: {
@@ -22,7 +23,6 @@ export default defineComponent({
     setup(props: {
         value: []
     }) {
-        console.log(props.value);
         const container = ref<HTMLElement>();
         type MusicParticleData = {
             row: number;
@@ -322,28 +322,28 @@ export default defineComponent({
                 .setChildrenState(wt.particle);
 
             const zoom = d3
-                .zoom()
-                .on('zoom', function (event) {
-                    const transform = event.transform;
-                    const scale = transform.rescaleX(manager.scale.raw);
-                    /*相对父元素*/
-                    const p_now_min = manager.parent_scale.raw(scale.domain()[0]);
-                    const p_min = manager.parent_scale.raw(manager.parent_scale.raw.domain()[0]);
-                    /*相对父元素*/
-                    const p_now_max = manager.parent_scale.raw(scale.domain()[1]);
-                    const p_max = manager.parent_scale.raw(manager.parent_scale.raw.domain()[1]);
+                    .zoom()
+                    .on('zoom', function (event) {
+                        const transform = event.transform;
+                        const scale = transform.rescaleX(manager.scale.raw);
+                        /*相对父元素*/
+                        const p_now_min = manager.parent_scale.raw(scale.domain()[0]);
+                        const p_min = manager.parent_scale.raw(manager.parent_scale.raw.domain()[0]);
+                        /*相对父元素*/
+                        const p_now_max = manager.parent_scale.raw(scale.domain()[1]);
+                        const p_max = manager.parent_scale.raw(manager.parent_scale.raw.domain()[1]);
 
-                    isLess.value = p_now_min < p_min || p_now_max > p_max + 100;
+                        isLess.value = p_now_min < p_min;
+                        isMore.value = p_now_max > p_max;
 //                    if (p_now_min < p_min || p_now_max > p_max) return;
-                    Object.assign(wt.container.transform, transform);
-                    Object.assign(wt.particle.transform, transform);
-                    /*同步状态*/
-                    manager.scale.now.domain(scale.domain());
-                    manager
-                        .setState(wt.container)
-                        .setChildrenState(wt.particle).updateScale();
-                })
-                .scaleExtent([1, 1.2])
+                        Object.assign(wt.container.transform, transform);
+                        Object.assign(wt.particle.transform, transform);
+                        /*同步状态*/
+                        manager.scale.now.domain(scale.domain());
+                        manager.setState(wt.container)
+                            .setChildrenState(wt.particle).updateScale();
+                    })
+                    .scaleExtent([1, 1.2])
             ;
 
 
@@ -355,6 +355,12 @@ export default defineComponent({
                 .call(zoom)
                 .on("dblclick.zoom", null);
 
+            let picked: MusicParticle<any> | null = null;
+            let moved = false;
+
+            document.addEventListener('mousemove', () => {
+                moved = true;
+            });
         });
 
 
@@ -382,7 +388,6 @@ export default defineComponent({
         }
 
         return () => <div class={cx(`h-100vh flex flex-col`)}>
-
             <div ref={container} class={cx(
                 css`
                   overflow: hidden;
@@ -394,30 +399,48 @@ export default defineComponent({
                     class={cx('nothing', 'animate__animated', css`
                       position: absolute;
                       top: 2em;
-                      left: 10em;
                       border: solid 1px rgba(255, 255, 255, .2);
                       padding: 12px;
                       animation-name: slideInLeft;
-                      animation-duration: 400ms;
-                      animation-timing-function: cubic-bezier(0.28, 0.76, 0.76, 0.23);
                       color: #f2f2f2;
-
                       opacity: 1;
-                      //translate: 0 -50%;
 
-                      &.remove {
-                        opacity: 0;
-
-                        animation-name: slideOutLeft;
+                      &.tail, &.head {
                         animation-duration: 400ms;
                         animation-timing-function: cubic-bezier(0.28, 0.76, 0.76, 0.23);
                       }
+
+                      &.tail {
+                        left: 10em;
+                        animation-name: slideInLeft;
+
+                        &.remove {
+                          animation-name: slideOutRight;
+                        }
+                      }
+
+                      &.head {
+                        right: 10em;
+                        animation-name: slideInRight;
+
+                        &.remove {
+                          animation-name: slideOutLeft;
+
+                        }
+                      }
+
+                      &.remove {
+                        opacity: 0;
+                      }
+
 
                       border-radius: 12px;
                       cursor: pointer;
 
                     `, {
-                        'remove animate__fadeOutLeft': !isLess.value
+                        'remove animate__fadeOutLeft': !isLess.value && !isMore.value,
+                        'tail': isMore.value,
+                        'head': isLess.value,
                     })}
                     onClick={() => {
                         if (!test.value) {
@@ -430,12 +453,16 @@ export default defineComponent({
                     }
                 >
                     <div>
-                        Noting Here 🤐
+                        {
+                            isLess.value && '已经到最开始了'
+                        }
+                        {
+                            isMore.value && '已经到最后了'
+                        }
+
                     </div>
                     <div class={cx('line', css`
                       padding: 0 24px;
-
-
                     `)}>
                     </div>
                 </div>
@@ -485,6 +512,8 @@ export default defineComponent({
                             .category-legend {
                               //display: none;
                               transition: height 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12);
+                              transition-delay: .7s;
+                              opacity: 0;
                               height: 0;
                               width: 0;
                               overflow: hidden;
@@ -497,7 +526,7 @@ export default defineComponent({
                             list-style: none;
                           }
 
-                          &.open .category {
+                          &:hover .category .category-item__title {
                             animation-duration: 2s;
                             animation-fill-mode: both;
                             animation-name: ${titleWindKeyframes};
@@ -557,17 +586,6 @@ export default defineComponent({
                                       font-size: 14px;
                                       font-style: normal;
                                       font-weight: 400;
-                                      transition: background-color 0.7s cubic-bezier(0.075, 0.96, 0.595, 1.12);
-                                      background: linear-gradient(0deg, transparent);
-
-                                      transition-duration: .7s;
-
-                                      &.active,
-                                      &:hover {
-                                        background: linear-gradient(20deg,
-                                        transparent 80%,
-                                        rgba(63, 146, 255, 0.47) 104.29%);
-                                      }
                                     `,
                                     {
 //                                        active: curCategory.value === item.category,
@@ -656,30 +674,3 @@ export default defineComponent({
         </div>;
     }
 });
-
-const titleWindKeyframes = keyframes`
-  0% {
-    opacity: 0;
-  }
-  5% {
-    opacity: 1;
-    transform-origin: 50% 0;
-    transform: perspective(800px) rotateX(-80deg);
-  }
-  30% {
-    opacity: 1;
-    transform-origin: 50% 0;
-    transform: perspective(800px) rotateX(30deg);
-  }
-  70% {
-    opacity: 1;
-    transform-origin: 50% 0;
-    transform: perspective(800px) rotateX(-20deg);
-  }
-  100% {
-    opacity: 1;
-    transform-origin: 50% 0;
-    transform: perspective(800px) rotateX(0);
-  }
-`;
-
