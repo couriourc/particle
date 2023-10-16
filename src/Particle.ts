@@ -9,6 +9,22 @@ export function applyVector(target: VectorBasic, source: VectorBasic) {
     });
 }
 
+export class ThemeProvider<T> {
+    state: T;
+
+    constructor(state: T) {
+        this.state = state;
+    }
+
+    getState() {
+
+    }
+
+    setState() {
+
+    }
+}
+
 export class Vector implements VectorBasic {
     x: number = 0;
     y: number = 0;
@@ -109,6 +125,14 @@ export class Vector implements VectorBasic {
     clone() {
         return new Vector(this);
     }
+
+    equal(other: VectorBasic) {
+        return this.x === other.x && this.y === other.y;
+    }
+
+    static isInRange(val: VectorBasic, min: VectorBasic, max: VectorBasic) {
+        return val.x >= min.x && val.x <= max.x && val.y >= min.y && val.y <= max.y;
+    }
 }
 
 
@@ -148,12 +172,11 @@ export class MovementVector extends Vector {
 export type ShapeBoundaryRecord = Record<'min' | 'max', Vector>;
 
 export class Shape extends MovementVector {
-
-    isInRange(min: Vector, max: Vector): boolean {
-        return this.x > min.x &&
-            this.y > min.x &&
-            this.x < max.x &&
-            this.y < max.y;
+    isInRange(boundary: ShapeBoundaryRecord): boolean {
+        return this.x > boundary.min.x &&
+            this.x < boundary.max.x &&
+            this.y > boundary.min.y &&
+            this.y < boundary.max.y;
     }
 }
 
@@ -182,7 +205,6 @@ export class ParticleMutableProperties extends Shape {
         return new ParticleMutableProperties(this);
     }
 
-
 }
 
 type ParticleHookName = `life:${Particle['status']}`;
@@ -209,22 +231,23 @@ export class Particle {
     /*粒子状态*/
     get visible(): boolean {
         const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
+        return this.cur.isInRange(boundary);
+    }
 
-//        if (!boundary) return false;
-//        console.log()
-//        if ()
-        const inRange = (val: VectorBasic) => val.x > boundary.min.x &&
-            val.x < boundary.max.x &&
-            val.y > boundary.min.y &&
-            val.y < boundary.max.y
-        ;
-        return inRange(this.cur) || inRange(this.to);
+    get willVisible() {
+        const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
+        return this.to.isInRange(boundary);
     }
 
     id: string = "";
     status: "enter" | "update" | "remove" = "enter";
 
+
     animating: (Promise<this> | null) = null;
+
+    is_stabled() {
+        return this.to.equal(this.cur);
+    }
 
     load(): this {
         return this;
@@ -270,9 +293,9 @@ export class Particle {
 
     emit(typename: ParticleHookName, ...args: any[]) {
         // setTimeout(() => {
-            this.$listeners[typename].forEach(
-                fn => fn(...args)
-            );
+        this.$listeners[typename].forEach(
+            fn => fn(...args)
+        );
         // });
         return this;
     }
@@ -337,6 +360,7 @@ export class ParticleManager {
         this.children
             .forEach(particle => particle.render());
     };
+
 
     /*向着各自的 to 移动*/
     toward(): Promise<this['children']> {

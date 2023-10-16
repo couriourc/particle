@@ -6,7 +6,7 @@ import 'uno.css';
 import Loading from "@/Loading.tsx";
 //import Website from "@/Website.tsx";
 import data from './DataProvider';
-
+import History from './history/index'
 createApp(<Loading
         value={
             new Promise((resolve) => {

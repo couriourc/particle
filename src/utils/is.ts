@@ -13,6 +13,14 @@ export function isDef<T>(target: any): target is T {
     return !isUndef(target);
 }
 
+export function isNull(target: any): target is null {
+    return is(target) === is(null);
+}
+
+export function isVoid(target: any): target is void {
+    return isUndef(target) || isNull(target);
+}
+
 export function isNumber(target: any): target is number {
     return is(target) === is(Number);
 }

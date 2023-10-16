@@ -56,17 +56,22 @@ const Loading = defineComponent<{
             loadedData.value = res;
         }).finally(() => isLoading.value = true);
         return () => <>
-            {/*<Transition*/}
-            {/*    duration={500}*/}
-            {/*    enterActiveClass={cx(css`*/}
-            {/*      &.loading {*/}
-            {/*        //clip-path: circle(100% at 50% 50%);*/}
-            {/*      }*/}
-            {/*    `)}*/}
-            {/*    leaveActiveClass={cx( css`*/}
-            {/*      &.loading {*/}
-            {/*      }*/}
-            {/*    `)}>*/}
+            <Transition
+                duration={500}
+                enterActiveClass={cx(css`
+                  &.loading {
+                    animation-name: fadeIn;
+                    animation-duration: 500ms;
+                    animation-fill-mode: both;
+                  }
+                `)}
+                leaveActiveClass={cx( css`
+                  &.loading {
+                    animation-name: fadeOut;
+                    animation-duration: 500ms;
+                    animation-fill-mode: both;
+                  }
+                `)}>
             {isLoading.value ?
                 cxt.slots.default({
                     value: loadedData.value,
@@ -77,7 +82,7 @@ const Loading = defineComponent<{
                     </div>
                 </div>
             }
-            {/*</Transition>*/}
+            </Transition>
         </>;
     }
 });

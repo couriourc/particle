@@ -7,22 +7,22 @@ import {
     MusicParticleManager
 } from "@/MusicParticleAnimator.ts";
 import * as d3 from 'd3';
-import {css, cx, keyframes} from "@emotion/css";
+import {css, cx} from "@emotion/css";
 
 import 'animate.css';
 import {Color} from "pixi.js";
 import Move from '@/assets/move.png';
 import {titleWindKeyframes} from "@/animation/keyframes.ts";
+import {isUndef} from "./utils/is";
 
 export default defineComponent({
     props: {
         value: {
-            type: Array
+            type: Array,
+            required: true
         }
     },
-    setup(props: {
-        value: []
-    }) {
+    setup(props) {
         const container = ref<HTMLElement>();
 
         const genMock = (row = 50) => new Array(row).fill(10).map((one, row, rows) =>
@@ -48,9 +48,9 @@ export default defineComponent({
             col_all: number;
             time: string;
         }
-        const data: (MusicParticleData & {
+        const data: FlatArray<Partial<(MusicParticleData & {
             is_mvp: boolean
-        })[] = genMock();
+        })>[][], 1>[] = genMock(1200);
 
 
         /*始终用第几行作为标准，而不是时间*/
@@ -60,7 +60,7 @@ export default defineComponent({
 
         const parentScale = d3
             .scaleLinear()
-            .domain([0, props.value?.length]);
+            .domain([0, props.value?.length * 2]);
 
         const wt: {
             container: MusicParticleContainerConfig;
@@ -89,7 +89,7 @@ export default defineComponent({
                 },
                 center: {
                     x: 0,
-                    y: 0
+                    y: 0,
                 },
                 gap: {
                     /*中间间隔*/
@@ -216,8 +216,8 @@ export default defineComponent({
                 },
                 /*粒子间距*/
                 margin: {
-                    x: 14,
-                    y: 14,
+                    x: 10,
+                    y: 10,
                 },
                 /*粒子移动的基速度*/
                 speed: {
@@ -236,12 +236,14 @@ export default defineComponent({
                     y: 0,
                 },
                 scale: {
-                    x: 1.2,
-                    y: 1.2,
+                    x: 1.5,
+                    y: 1.5,
                     extent: [1, 1.8]
                 },
                 opacity: 1,
-                sensitivity: 40,
+                get sensitivity() {
+                    return Math.round(20 + 2 * Math.PI * (this.scale.x ** 2));
+                },
             },
             /*当前的状态*/
             footer: {
@@ -250,17 +252,11 @@ export default defineComponent({
             /**/
         };
 
-        const footer = reactive(wt.footer);
-
 
         const manager = new MusicParticleManager(dataScale, parentScale, wt.container);
 
         const all_data = data.length;
         manager.data = props.value;
-        const rand_v = (x: number) => Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
-        if (all_data < 5000) {
-            wt.particle.scale.x = wt.particle.scale.y = 2;
-        }
 
 
         const isLess = ref(false);
@@ -282,7 +278,7 @@ export default defineComponent({
             /*设置比例尺*/
             manager.scale.now.range([wt.container.margin.left, size.width - wt.container.margin.right]);
             manager.scale.raw.range([wt.container.padding.left, size.width - wt.container.padding.right]);
-
+            /*同步父元素的比例尺信息*/
             manager.parent_scale.now.range([wt.container.padding.left, size.width - wt.container.padding.right]);
             manager.parent_scale.raw.range([wt.container.padding.left, size.width - wt.container.padding.right]);
         }
@@ -290,38 +286,51 @@ export default defineComponent({
         function setupManager() {
             manager.setContainer(container.value as HTMLElement);
             manager.setState(wt.container);
-
         }
 
         function bindEvent() {
             /*调整比例尺的时候会重置位置*/
-            manager.onUpdateScale(() => {
+            manager.onUpdateScale((_, __, status) => {
+                isLess.value = status === 'less';
+                isMore.value = status === 'more';
                 handleTestResume();
             });
+
 
             const zoom = d3
                 .zoom()
                 .on('zoom', function (event) {
                     const transform = event.transform;
-                    const scale = transform.rescaleX(manager.scale.raw);
-                    /*相对父元素*/
-                    const p_now_min = manager.parent_scale.raw(scale.domain()[0]);
-                    const p_min = manager.parent_scale.raw(manager.parent_scale.raw.domain()[0]);
-                    /*相对父元素*/
-                    const p_now_max = manager.parent_scale.raw(scale.domain()[1]);
-                    const p_max = manager.parent_scale.raw(manager.parent_scale.raw.domain()[1]);
-                    /**/
-                    isLess.value = p_now_min < p_min;
-                    isMore.value = p_now_max > p_max;
-                    /**/
-                    Object.assign(wt.container.transform, transform);
-                    Object.assign(wt.particle.transform, transform);
+                    if (!(event.sourceEvent && isUndef(event.sourceEvent.deltaX))) {
+                        /*这是滚轮移动，这种情况下移动无效，放大有效*/
+                        transform.x = wt.container.transform.x;
+                    }
+                    /*说明没有动*/
+                    if (transform.k === wt.container.transform.k && transform.x === wt.container.transform.x) return;
+                    const [p_start, p_end] = manager.parent_scale.raw.range();
+                    const [r_start, r_end] = manager.scale.raw.domain().map(domain => manager.parent_scale.raw(domain));
+
+                    let start = r_start * transform.k + transform.x;
+                    let end = r_end * transform.k + transform.x;
+                    const checked = manager.checkScale(start, end);
+                    if (start < p_start) start = p_start;
+                    if (end > p_end) end = p_end;
+                    if (start > end) return;
+
+                    Object.assign(wt.container.transform, {
+                        k: transform.k,
+                        x: transform.x,
+                    });
+                    Object.assign(wt.particle.transform, {
+                        k: transform.k,
+                        x: transform.x,
+                    });
                     /*同步状态*/
 
-                    manager.scale.now.domain(scale.domain());
+                    manager.scale.now.domain([manager.parent_scale.now.invert(start), manager.parent_scale.now.invert(end)]);
                     manager.setState(wt.container)
                         .setChildrenState(wt.particle)
-                        .updateScale();
+                        .updateScale(checked);
                 })
                 .scaleExtent([1, 1.6]);
 
@@ -332,8 +341,7 @@ export default defineComponent({
         }
 
         function loadParticle(data: any[]) {
-
-            const particles = data.map((data, index) => {
+            const particles = data.map((data) => {
                 /*保存粒子的初始状态*/
                 const particle = new MusicParticle(wt.particle);
                 const random_dot = manager.getRandomDotAtBoundary();
@@ -342,9 +350,9 @@ export default defineComponent({
 
                 particle.cur.apply(random_dot);
                 particle.cur.opacity = wt.particle.opacity;
+
                 particle.cur.scale.applyScale(wt.particle.scale.x * 0.5);
                 particle.cur.scale.velocity.apply(wt.particle.scale_speed);
-
                 particle.to.scale.apply(wt.particle.scale);
 
                 particle.id = `${data.row}-${data.col}`;
@@ -415,6 +423,7 @@ export default defineComponent({
                   overflow: hidden;
                   cursor: none;
                   height: 100%;
+                  background: url(${`/assets/img_texture.png`});
                 `
             )}>
                 <div
@@ -695,5 +704,6 @@ export default defineComponent({
                 </ul>
             </div>
         </div>;
+
     }
 });
