@@ -1,93 +1,76 @@
-/*备忘录*/
-class Memento<T> {
-    _state: T;
-    _book: MementoBook<T>;
+export class EventListener<T> {
+    #listeners: Map<T, Set<Function>> = new Map();
 
-    constructor(state: T) {
-        this._state = state;
-        this._book = new MementoBook<T>(this);
-        this.setState(state);
+    on(typename: T, listener: Function) {
+        if (!this.#listeners.has(typename)) {
+            this.#listeners.set(typename, new Set<Function>([listener]));
+        } else {
+            this.#listeners.set(typename, this.#listeners.get(typename).add(listener));
+        }
+        return this;
+    }
+
+    emit(typename: T, ...args: any[]) {
+        this.#listeners.get(typename)?.forEach(fn => {
+            fn(...args);
+        });
+        return this;
+    }
+}
+
+export class StateMachine<T> extends EventListener<'update'> {
+    #state: T = null;
+    #manager: StateMachineManager<T> = null;
+
+    constructor(initialState: Partial<T>) {
+        super();
+        this.setState(initialState);
+    }
+
+    setState(state: Partial<T>) {
+        Object.assign(this.#state, state);
+        this.emit('update', this.#state);
     }
 
     getState() {
-        return this._state;
+        return this.#state;
     }
 
-    setState(state: T) {
-
-    }
-
-    snapshot() {
-        return this.getState();
-    }
-
-    store() {
-        return this._book.store(this._state);
-    }
-
-    /*销毁这个快照*/
-    destroy() {
-
+    setManager(manager: StateMachineManager<T>) {
+        this.#manager = manager;
     }
 }
 
-class MementoBook<T> {
-    #history: Memento<T>['_state'][] = [];
-    #now: number = -1;
-    #memento: Memento<T>;
+export class StateMachineManager<T> extends EventListener<'undo' | 'forward'> {
+    #history: T[] = [];
+    #observer: StateMachine<T>;
+    #now: number = this.#history.length;
 
-    get curState() {
-        return this.#history[this.#now];
+    constructor(observer: StateMachine<T>) {
+        super();
+        observer.setManager(this);
+        this.#observer = observer;
+        this.backup();
     }
 
-    /*进行书籍绑定*/
-    constructor(memento: Memento<T>) {
-        /*绑定观察元素*/
-        this.#memento = memento;
-        /*创建初始快照*/
-        this.store(memento.snapshot());
-    }
-
-    isEmpty() {
-        return !this.#history.length;
-    }
-
-    isSurpass() {
-        return this.#now > this.#history.length;
-    }
-
-    last() {
-        this.#now = this.#history.length - 1;
-        return this.curState;
-    }
-
-    store(state: T) {
-        ++this.#now;
-        this.#history.push(state);
-    }
-
-    destroy() {
-        this.#history = [];
+    backup() {
+        this.#history.push(this.#observer.getState());
+        return this;
     }
 
     undo() {
-        if (this.isEmpty()) return this;
-        this.#now--;
+        if (this.#now < 0) return this;
+        const state = this.#history[this.#now--];
+        this.#observer.setState(state);
+        this.emit('undo');
         return this;
     }
 
-    revokeUndo() {
-        if (this.isEmpty()) return null;
-        if (this.isSurpass()) {
-            return this.last();
-        }
-        this.#now++;
+    forward() {
+        if (this.#now > this.#history.length) return this;
+        const state = this.#history[++this.#now];
+        this.#observer.setState(state);
+        this.emit('forward');
         return this;
-    }
-
-    /*恢复*/
-    apply() {
-        this.#memento.setState(this.curState);
     }
 }
-

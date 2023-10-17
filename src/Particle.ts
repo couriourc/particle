@@ -234,10 +234,6 @@ export class Particle {
         return this.cur.isInRange(boundary);
     }
 
-    get willVisible() {
-        const boundary = this.manager?.boundary as ShapeBoundaryRecord ?? undefined;
-        return this.to.isInRange(boundary);
-    }
 
     id: string = "";
     status: "enter" | "update" | "remove" = "enter";

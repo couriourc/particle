@@ -43,7 +43,7 @@ export class Thread {
         this.runFunName = "$____jkdsfhasjdfhdsjklafhk___kljdas";
     }
 
-    run(...args: Array<any>) {
+    run() {
     }
 
     /**

@@ -14,6 +14,7 @@ import {Color} from "pixi.js";
 import Move from '@/assets/move.png';
 import {titleWindKeyframes} from "@/animation/keyframes.ts";
 import {isUndef} from "./utils/is";
+import {D3ZoomEvent} from "d3";
 
 export default defineComponent({
     props: {
@@ -95,7 +96,7 @@ export default defineComponent({
                     /*中间间隔*/
                     height: 5,
                 },
-                background: new Color('rgba(32, 37, 65, 0.60)'),
+                background: new Color('#e8a8bf'),
                 /*配置尺子相关的*/
                 ruler: {
                     /**/
@@ -135,7 +136,7 @@ export default defineComponent({
                     width: 12,
                     height: 12,
                     transform: {
-                        x: 0,
+                        x: 100,
                         y: 0,
                         k: 1,
                     }
@@ -152,7 +153,7 @@ export default defineComponent({
                     return 'up';
                 },
                 up: {
-                    color: new Color("#00bcf2"),
+                    color: new Color("#3D4145"),
                 },
                 down: {
                     /*下边的粒子颜色*/
@@ -162,34 +163,51 @@ export default defineComponent({
                     /*最有价值的某一天 或者某个新闻*/
                     color: new Color("#eaeef1"),
                 },
+                /*粒子尺寸*/
+                size: 2,
                 /*卡片样式*/
                 card: {
                     css: css`
                       display: flex;
                       flex-direction: column;
                       align-items: center;
-                      background: rgba(32, 37, 65, 0.80);
+                      background: transparent;
                       border: 1px solid rgba(255, 255, 255, .4);
                       justify-content: center;
                       z-index: 3;
-                      border-radius: 2em;
-                      width: 8em;
-                      height: 3em;
+                      border-radius: 100%;
+                      width: 6em;
+                      height: 6em;
                       padding: 6px 24px;
 
-                      animation-name: fadeIn;
                       animation-duration: 500ms;
+                      animation-fill-mode: both;
                       text-align: center;
 
                       color: white;
                       cursor: pointer;
-                      transition: width 100ms cubic-bezier(0.47, 0.8, 0.61, 0.13),
-                      height 200ms cubic-bezier(0.47, 0.8, 0.61, 0.13);
+                      transition: width 250ms cubic-bezier(0.47, 0.8, 0.61, 0.13),
+                      height 250ms cubic-bezier(0.47, 0.8, 0.61, 0.13), border 250ms;
 
                       /**/
-                      animation-fill-mode: both;
                       /*配置动画效果*/
                       animation-timing-function: cubic-bezier(0.47, 0.8, 0.61, 0.13);
+
+                      &.up {
+                        border: 4px solid #3d4145;
+                      }
+
+                      &.down {
+                        border: 4px solid rgba(255, 255, 255, .4);
+                      }
+
+                      &.up .title {
+                        color: #f2f2f2 !important;
+                      }
+
+                      &.down .title {
+                        color: black !important;
+                      }
 
                       &.close {
 
@@ -201,6 +219,7 @@ export default defineComponent({
                       &.open {
                         animation-name: fadeIn;
                         animation-duration: inherit;
+                        animation-fill-mode: both;
 
                         .title {
                           animation-name: inherit;
@@ -211,23 +230,29 @@ export default defineComponent({
                         justify-content: flex-start;
                         width: 250px;
                         height: 125px;
+                        background: #f2f2f2;
+                        border-radius: 6px;
+                      }
+
+                      &.up.open {
+                        background: rgb(61, 65, 69);
                       }
                     `,
                 },
                 /*粒子间距*/
                 margin: {
-                    x: 10,
-                    y: 10,
+                    x: 6,
+                    y: 6,
                 },
                 /*粒子移动的基速度*/
                 speed: {
-                    x: 9.0,
-                    y: 9.0,
+                    x: 20.0,
+                    y: 20.0,
                 },
                 /*粒子放大的基速度*/
                 scale_speed: {
-                    x: .028,
-                    y: .028,
+                    x: 0.5,
+                    y: 0.5,
                 },
                 /*粒子初始放缩大小*/
                 transform: {
@@ -236,8 +261,8 @@ export default defineComponent({
                     y: 0,
                 },
                 scale: {
-                    x: 1.5,
-                    y: 1.5,
+                    x: 1,
+                    y: 1,
                     extent: [1, 1.8]
                 },
                 opacity: 1,
@@ -296,17 +321,18 @@ export default defineComponent({
                 handleTestResume();
             });
 
-
+//
             const zoom = d3
                 .zoom()
-                .on('zoom', function (event) {
+                .on('zoom', function (event: D3ZoomEvent<any, any>) {
                     const transform = event.transform;
                     if (!(event.sourceEvent && isUndef(event.sourceEvent.deltaX))) {
                         /*这是滚轮移动，这种情况下移动无效，放大有效*/
                         transform.x = wt.container.transform.x;
                     }
-                    /*说明没有动*/
+                    /*说明没有动，就不通知更新*/
                     if (transform.k === wt.container.transform.k && transform.x === wt.container.transform.x) return;
+                    /**/
                     const [p_start, p_end] = manager.parent_scale.raw.range();
                     const [r_start, r_end] = manager.scale.raw.domain().map(domain => manager.parent_scale.raw(domain));
 
@@ -351,7 +377,7 @@ export default defineComponent({
                 particle.cur.apply(random_dot);
                 particle.cur.opacity = wt.particle.opacity;
 
-                particle.cur.scale.applyScale(wt.particle.scale.x * 0.5);
+                particle.cur.scale.applyScale(wt.particle.scale.x);
                 particle.cur.scale.velocity.apply(wt.particle.scale_speed);
                 particle.to.scale.apply(wt.particle.scale);
 
@@ -399,7 +425,6 @@ export default defineComponent({
         const test = ref(false);
 
         function handleTestAppear(): any {
-            // loadParticle(genMock(30));
             manager.children.forEach((particle) => {
                 particle.appear();
             });
@@ -416,6 +441,7 @@ export default defineComponent({
             );
 
         }
+
 
         return () => <div class={cx(`h-100vh flex flex-col`)}>
             <div ref={container} class={cx(
@@ -490,13 +516,9 @@ export default defineComponent({
                         {
                             isMore.value && '已经到最后了'
                         }
-
-                    </div>
-                    <div class={cx('line', css`
-                      padding: 0 24px;
-                    `)}>
                     </div>
                 </div>
+
                 <ul
                     class={cx(
                         "scroll-x-list",

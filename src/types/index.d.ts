@@ -1,6 +1,6 @@
 declare type FnOrValue<ReturnType> = ((...args: any[]) => ReturnType) | ReturnType
 
-declare interface VectorBasic {
+export declare interface VectorBasic {
     x: number;
     y: number;
 }
