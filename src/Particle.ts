@@ -2,6 +2,7 @@
 
 
 import {isArray, isFunction, isNumber, isUndef} from "@/utils/is.ts";
+import {VectorBasic} from "./types";
 
 export function applyVector(target: VectorBasic, source: VectorBasic) {
     Object.keys(source).forEach((key) => {
@@ -28,6 +29,7 @@ export class ThemeProvider<T> {
 export class Vector implements VectorBasic {
     x: number = 0;
     y: number = 0;
+    z: number = 0;
 
     apply(other: VectorBasic) {
         Object.assign(this, {
@@ -133,6 +135,20 @@ export class Vector implements VectorBasic {
     static isInRange(val: VectorBasic, min: VectorBasic, max: VectorBasic) {
         return val.x >= min.x && val.x <= max.x && val.y >= min.y && val.y <= max.y;
     }
+
+    convert_2d_3d() {
+//        (particle.z = 5 * Math.cos(e / (0.5 * ht))),
+        return {
+            x: this.x,
+            y: this.y,
+            scale: {
+                x: (this.y * (this.z + 1)) / 7e3,
+                y: (this.y * (this.z + 1)) / 7e3,
+
+            }
+        };
+    }
+
 }
 
 

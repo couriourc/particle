@@ -1,8 +1,9 @@
-declare type FnOrValue<ReturnType> = ((...args: any[]) => ReturnType) | ReturnType
+export type FnOrValue<ReturnType> = ((...args: any[]) => ReturnType) | ReturnType
 
-export declare interface VectorBasic {
+export interface VectorBasic {
     x: number;
     y: number;
+    z?: number;
 }
 
-declare type VectorBasicMatrix = ([number, number])[]
+export type VectorBasicMatrix = ([number, number])[]

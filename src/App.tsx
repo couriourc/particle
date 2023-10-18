@@ -1,4 +1,4 @@
-import {defineComponent, onMounted, reactive, ref, shallowRef, Transition} from "vue";
+import {defineComponent, onMounted, onUnmounted, reactive, ref, shallowRef, Transition} from "vue";
 import {
     MusicParticle,
     type MusicParticleConfig,
@@ -15,6 +15,7 @@ import Move from '@/assets/move.png';
 import {titleWindKeyframes} from "@/animation/keyframes.ts";
 import {isUndef} from "./utils/is";
 import {D3ZoomEvent} from "d3";
+import {throttle} from "./utils/fn";
 
 export default defineComponent({
     props: {
@@ -37,7 +38,7 @@ export default defineComponent({
                         col_all: cols.length,
                         all_data: rows.length * cols.length,
                         index: row * cols.length + col,
-                        is_mvp: Math.random() < 0.008,
+                        is_mvp: false,
                         data: _
                     };
                 })
@@ -57,11 +58,11 @@ export default defineComponent({
         /*始终用第几行作为标准，而不是时间*/
         const dataScale = d3
             .scaleLinear()
-            .domain([0, props.value?.length]);
+            .domain([0, 1200]);
 
         const parentScale = d3
             .scaleLinear()
-            .domain([0, props.value?.length * 2]);
+            .domain([0, 1200 * 2]);
 
         const wt: {
             container: MusicParticleContainerConfig;
@@ -96,7 +97,7 @@ export default defineComponent({
                     /*中间间隔*/
                     height: 5,
                 },
-                background: new Color('#e8a8bf'),
+                background: new Color('#1c2734'),
                 /*配置尺子相关的*/
                 ruler: {
                     /**/
@@ -152,8 +153,9 @@ export default defineComponent({
                     if (data.col > data.col_all >> 1) return 'down';
                     return 'up';
                 },
+
                 up: {
-                    color: new Color("#3D4145"),
+                    color: new Color("#6f94cd"),
                 },
                 down: {
                     /*下边的粒子颜色*/
@@ -189,16 +191,18 @@ export default defineComponent({
                       transition: width 250ms cubic-bezier(0.47, 0.8, 0.61, 0.13),
                       height 250ms cubic-bezier(0.47, 0.8, 0.61, 0.13), border 250ms;
 
+                      overflow: hidden;
+
                       /**/
                       /*配置动画效果*/
                       animation-timing-function: cubic-bezier(0.47, 0.8, 0.61, 0.13);
 
                       &.up {
-                        border: 4px solid #3d4145;
+                        border: 2px solid rgba(111, 148, 205, .4);
                       }
 
                       &.down {
-                        border: 4px solid rgba(255, 255, 255, .4);
+                        border: 2px solid rgba(255, 255, 255, .4);
                       }
 
                       &.up .title {
@@ -241,8 +245,8 @@ export default defineComponent({
                 },
                 /*粒子间距*/
                 margin: {
-                    x: 6,
-                    y: 6,
+                    x: 10,
+                    y: 10,
                 },
                 /*粒子移动的基速度*/
                 speed: {
@@ -265,7 +269,10 @@ export default defineComponent({
                     y: 1,
                     extent: [1, 1.8]
                 },
-                opacity: 1,
+                opacity: {
+                    hover: 1,
+                    normal: 0.8
+                },
                 get sensitivity() {
                     return Math.round(20 + 2 * Math.PI * (this.scale.x ** 2));
                 },
@@ -324,7 +331,7 @@ export default defineComponent({
 //
             const zoom = d3
                 .zoom()
-                .on('zoom', function (event: D3ZoomEvent<any, any>) {
+                .on('zoom', throttle(function (event: D3ZoomEvent<any, any>) {
                     const transform = event.transform;
                     if (!(event.sourceEvent && isUndef(event.sourceEvent.deltaX))) {
                         /*这是滚轮移动，这种情况下移动无效，放大有效*/
@@ -352,14 +359,12 @@ export default defineComponent({
                         x: transform.x,
                     });
                     /*同步状态*/
-
                     manager.scale.now.domain([manager.parent_scale.now.invert(start), manager.parent_scale.now.invert(end)]);
                     manager.setState(wt.container)
                         .setChildrenState(wt.particle)
                         .updateScale(checked);
-                })
-                .scaleExtent([1, 1.6]);
-
+                }, 25))
+                .scaleExtent([1.0, 1.6]);
             d3.select(container.value as Element)
                 .call(zoom.transform, d3.zoomIdentity)
                 .call(zoom)
@@ -375,7 +380,7 @@ export default defineComponent({
                 particle.from.scale.apply(particle.cur.scale);
 
                 particle.cur.apply(random_dot);
-                particle.cur.opacity = wt.particle.opacity;
+                particle.cur.opacity = wt.particle.opacity.normal;
 
                 particle.cur.scale.applyScale(wt.particle.scale.x);
                 particle.cur.scale.velocity.apply(wt.particle.scale_speed);
@@ -402,7 +407,6 @@ export default defineComponent({
 
             manager.appendChild(particles)
                 .setChildrenState(wt.particle);
-
         }
 
         function setupParticle() {
@@ -410,11 +414,8 @@ export default defineComponent({
             setupManager();
             /*加载粒子*/
             loadParticle(data);
-
             /*绑定事件信息*/
             bindEvent();
-
-
         }
 
         onMounted(() => {
@@ -425,21 +426,20 @@ export default defineComponent({
         const test = ref(false);
 
         function handleTestAppear(): any {
-            manager.children.forEach((particle) => {
-                particle.appear();
-            });
-
+            manager.children
+                .filter(particle => {
+                    return particle.data().is_mvp;
+                })
+                .forEach((particle) => {
+                    particle.appear();
+                });
         }
 
 
         function handleTestResume() {
-            manager.children.forEach(
-                (particle) => {
-                    /*在基速度的基础上*/
-                    particle.resume();
-                }
-            );
-
+            manager.resume()
+                .then(() => {
+                });
         }
 
 

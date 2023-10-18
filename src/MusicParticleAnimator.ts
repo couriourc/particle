@@ -119,7 +119,10 @@ export type MusicParticleConfig<T> = {
     };
     margin: VectorBasic;
     sensitivity: number;
-    opacity: number;
+    opacity: {
+        hover: number;
+        normal: number;
+    };
 }
 export type MusicParticleFooterConfig = {
     isOpen: boolean;
@@ -163,9 +166,13 @@ export class MusicParticle<T> extends ParticleAnimator {
         this.shape.scale.set(state.scale.x, state.scale.y,);
         this.container.sortableChildren = true;
         this.shape.zIndex = 100;
-        this.container.eventMode = 'dynamic';
+        this.shape.alpha = this.cur.opacity;
+        this.container.buttonMode = false;
+        this.container.eventMode = 'none';
         this.container.addChild(this.shape);
         this.manager?.root.stage.addChild(this.container);
+
+
         /*start*/
     }
 
@@ -203,7 +210,6 @@ export class MusicParticle<T> extends ParticleAnimator {
                     unuseful = true;
                     /*抛出本次成果*/
                     resolve(this);
-                    console.log(this);
                     /*移除掉本批次的任务*/
                     this.animating = null;
                     this.over_listeners.delete(over);
@@ -217,15 +223,21 @@ export class MusicParticle<T> extends ParticleAnimator {
 
     ease() {
         const to = this.to;
-        if (!this.visible) {
+        if (!this.shape.visible) {
             this.cur.x = this.to.x;
             this.cur.y = this.to.y;
             this.cur.scale.apply(this.to.scale);
             this.cur.opacity = this.to.opacity;
             /*因为是不可见元素，所以在 render 的时候一见到为*/
         } else {
-            !this.cur.equal(this.to) && (ease(this.cur, to, 'x',), ease(this.cur, to, 'y',));
-            this.cur.equal(this.to) && (ease(this.cur.scale, to.scale, 'x',), ease(this.cur.scale, to.scale, 'y',));
+
+            const pos_stabled = this.cur.equal(to);
+            const scale_stabled = this.cur.scale.equal(to.scale);
+            !pos_stabled && (ease(this.cur, to, 'x',), ease(this.cur, to, 'y',));
+            pos_stabled && !scale_stabled && (ease(this.cur.scale, to.scale, 'x',), ease(this.cur.scale, to.scale, 'y',));
+
+            this.cur.opacity = this.to.opacity;
+
         }
         if (this.is_stabled) {
             this.triggerEaseOver();
@@ -235,10 +247,14 @@ export class MusicParticle<T> extends ParticleAnimator {
     render() {
         /*点位运动*/
         this.ease();
+
         this.shape.visible = this.visible;
         this.shape.alpha = this.cur.opacity;
         this.shape.position.set(this.cur.x, this.cur.y);
-        this.shape.scale.set(this.cur.scale.x, this.cur.scale.y);
+        let amp = 0;
+        if (this._data.is_mvp) amp += 1;
+        this.shape.scale.set(this.cur.scale.x + amp, this.cur.scale.y + amp);
+
         this.updateEl();
         return this;
     }
@@ -250,12 +266,13 @@ export class MusicParticle<T> extends ParticleAnimator {
         /*基于自己方向，左右交叉x,y*/
         const random_dot = {
             x: [this.cur.x - (max.x ** Math.random()), this.cur.x + (max.x * Math.random())][(Math.random() > 0.5) ? 0 : 1],
-            y: [min.y - 10, max.y + 10][(Math.random() > 0.5) ? 0 : 1]
+            y: [min.y - this.cur.y, max.y + this.cur.y][(Math.random() > 0.5) ? 0 : 1]
         };
         this.to.apply(random_dot);
         this.to.scale.applyScale(0);
         return this.toward();
     }
+
 
     _el: d3.Selection<any, any, any, any> | null | undefined = undefined;
 
@@ -322,9 +339,6 @@ export class MusicParticle<T> extends ParticleAnimator {
     }
 
     updateEl() {
-        if (!this._el) return;
-//        if (this.manager?._events_target !== this) this.deactive();
-        /*更新尺子的标签*/
         this._el?.style('top', d => `${d.cur.y}px`)
             .style('left', d => `${d.cur.x}px`);
     }
@@ -340,7 +354,7 @@ export class MusicParticle<T> extends ParticleAnimator {
 
     /*随机 数学函数 */
     static rand_v(x: number, all_data: number) {
-        return Math.random() * Math.random() * (1 + Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1))));
+        return Math.abs((x - (all_data >> 1)) * Math.sin(x - (all_data >> 1)));
     };
 
     /*安排*/
@@ -379,22 +393,30 @@ export class MusicParticle<T> extends ParticleAnimator {
                 + (data.col > (data.col_all >> 1) ? -(managerState.gap.height >> 1) : (-managerState.gap.height << 1)),
         };
 
+        const min_x = boundary.min.x;
+        const max_x = boundary.max.x;
+        const dx = Math.abs(max_x - min_x);
+        const min_y = boundary.min.y;
+        const max_y = boundary.max.y;
+        const dy = Math.abs(max_y - min_y);
+
+        const half = (val: number) => val >> 1;
         const wouldPlace = {
 
             /*三个区间段 [0.5s-10px,1s,0.5s+10px]*/
             /*在左边就近一点的左边*/
-            x: willPlace.x < (boundary.min.x - boundary.max.x) * .1 ?
-                -state.margin.x + (boundary.min.x - boundary.max.x) :
-                willPlace.x > (boundary.max.x - boundary.min.x) * 1.1 ?
-                    state.margin.x + (boundary.max.x - boundary.min.x) :
-                    willPlace.x,
+            x: willPlace.x < min_x - 20 ?
+                min_x - ~~(500 * Math.random()) :
+                willPlace.x > max_x + 20 ?
+                    max_x + ~~(500 * Math.random()) :
+                    ~~willPlace.x,
             /*四个区间段*/
             /*上下*/
-            y: (willPlace.x < (boundary.min.x - boundary.max.x) * .1 || willPlace.x > (boundary.max.x - boundary.min.x) * 1.1) ?
+            y: (willPlace.x < min_x || willPlace.x > max_x) ?
                 direction === 'up' ?
-                    -willPlace.y - (boundary.min.y - boundary.max.y) * .1 * Math.random() :
-                    willPlace.y + (boundary.max.y - boundary.min.y) * 1.1 * Math.random()
-                : willPlace.y,
+                    -20 - willPlace.y :
+                    willPlace.y + max_y + (~~Math.random() * half(dy))
+                : ~~willPlace.y,
         };
 
         const M = (cur: VectorBasic, to: VectorBasic) => {
@@ -431,6 +453,11 @@ export class MusicParticle<T> extends ParticleAnimator {
         };
     }
 
+    order_pos_3d() {
+
+
+    }
+
     resume() {
 
         const ordered_scale = this.order_random_scale();
@@ -439,6 +466,7 @@ export class MusicParticle<T> extends ParticleAnimator {
         this.to.apply(ordered_pos);
         this.to.scale.apply(ordered_scale);
         this.from.scale.apply(this.to.scale);
+        return this.toward();
     }
 }
 
@@ -540,6 +568,7 @@ export class MusicParticleManager<T> extends ParticleManager {
         this.attachEvent();
         this.attachRuler();
         this.attachScale();
+        this.listenerMvp();
         return this;
     }
 
@@ -548,6 +577,17 @@ export class MusicParticleManager<T> extends ParticleManager {
             .forEach(particle => particle.render());
 //        this.root.renderer.render(this.children.map((particle,index) => particle.shape));
 
+    }
+
+    resume() {
+        return Promise.all(
+            this.children.map(
+                (particle) => {
+                    /*在基速度的基础上*/
+                    return particle.resume();
+                }
+            )
+        );
     }
 
     attachEvent() {
@@ -681,6 +721,7 @@ export class MusicParticleManager<T> extends ParticleManager {
         });
 
     }
+
 
     /*@ts-ignore*/
     parent_scale: {
@@ -922,6 +963,17 @@ export class MusicParticleManager<T> extends ParticleManager {
     _animating_target: boolean;
 
 
+    listenerMvp() {
+        this._events_targets = this.children.filter((particle) => {
+            const data = particle.data();
+            return data.is_mvp;
+        });
+        setTimeout(() => {
+//            console.log(this._events_targets);
+            this.listenerMvp();
+        }, 1000);
+    }
+
     setEventsTarget(pointer: VectorBasic) {
         /*开始向外扩展查找*/
         /*查找依据为周围三到四列*/
@@ -940,7 +992,7 @@ export class MusicParticleManager<T> extends ParticleManager {
 
                     const state = child.getState();
                     const need_update = child.visible && child.to.x === child.cur.x && child.to.y === child.cur.y;
-
+                    child.to.opacity = state.opacity.normal;
                     child.cur.scale.velocity.apply({
                         x: state.scale_speed.x,
                         y: state.scale_speed.y,
@@ -965,6 +1017,9 @@ export class MusicParticleManager<T> extends ParticleManager {
                     closet_distance = distance;
                 }
                 const real = scale(distance);
+                /*进入激活态标记*/
+                child.to.opacity = state.opacity.hover;
+
                 child.cur.scale.velocity.apply({
                     x: state.scale_speed.x * Math.random(),
                     y: state.scale_speed.y * Math.random(),
